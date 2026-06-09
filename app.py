@@ -336,6 +336,14 @@ def download(filename):
     return send_file(str(path), as_attachment=True, download_name=filename)
 
 
+@app.route('/logo')
+def serve_logo():
+    """Serve the default logo for canvas preview."""
+    if not Path(LOGO_PATH).exists():
+        return 'Not found', 404
+    return send_file(LOGO_PATH, mimetype='image/png')
+
+
 @app.route('/stream/<filename>')
 def stream_video(filename):
     """Stream video for browser-side upload to EF."""
@@ -467,10 +475,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Editor de Vídeo — O Globo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@800&display=swap" rel="stylesheet">
 <style>
   :root {
     --red: #E8002D; --bg: #0d0d0d; --sidebar: #111; --border: #222;
-    --text: #f0f0f0; --muted: #666; --radius: 8px; --font: 'Helvetica Neue', Arial, sans-serif;
+    --text: #f0f0f0; --muted: #666; --radius: 8px; --font: 'Exo 2', 'Helvetica Neue', Arial, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; height: 100vh; display: flex; flex-direction: column; }
@@ -730,6 +741,15 @@ let lastFilename = null;
 let wmPos = 'topleft';
 let wmMode = 'image';
 
+// Default logo (loaded from server)
+let defaultLogoImg = null;
+let customLogoImg  = null;
+(function loadDefaultLogo() {
+  const img = new Image();
+  img.onload = () => { defaultLogoImg = img; updatePreview(); };
+  img.src = '/logo';
+})();
+
 const hiddenVideo = document.createElement('video');
 hiddenVideo.muted = true; hiddenVideo.playsInline = true; hiddenVideo.preload = 'auto';
 
@@ -771,9 +791,11 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
     document.getElementById('logoPreviewWrap').innerHTML =
       '<div style="font-size:11px;color:#4ade80;margin-bottom:4px">✓ ' + f.name + ' — clique para trocar</div>' +
       '<img src="' + ev.target.result + '" class="logo-preview">';
+    const img = new Image();
+    img.onload = () => { customLogoImg = img; updatePreview(); };
+    img.src = ev.target.result;
   };
   reader.readAsDataURL(f);
-  updatePreview();
 });
 
 // ── WM tabs ───────────────────────────────────────────────────────────────────
@@ -886,7 +908,32 @@ function drawOverlays(ctx, cw, ch) {
   const tOffY = parseInt(document.getElementById('titleOffY').value)/100;
   const tOffX = parseInt(document.getElementById('titleOffX').value)/100;
 
-  if (!superT && !mainT) return;
+  if (!superT && !mainT) {
+    // Ainda desenha a logo mesmo sem título
+    if (wmMode === 'image') {
+      const logoImg = customLogoImg || defaultLogoImg;
+      if (logoImg) {
+        const wmSzPct = parseInt(document.getElementById('wmSize').value)/100;
+        const wmMxPct = parseInt(document.getElementById('wmMx').value)/100;
+        const wmMyPct = parseInt(document.getElementById('wmMy').value)/100;
+        const wmOpacity = parseInt(document.getElementById('wmOpac').value)/100;
+        const shortSide = Math.min(cw, ch);
+        const lw = Math.round(shortSide * wmSzPct);
+        const lh = Math.round(lw * logoImg.height / logoImg.width);
+        const mx = Math.round(cw * wmMxPct);
+        const my = Math.round(ch * wmMyPct);
+        let lx, ly;
+        if      (wmPos === 'topleft')     { lx = mx;       ly = my; }
+        else if (wmPos === 'topright')    { lx = cw-lw-mx; ly = my; }
+        else if (wmPos === 'bottomleft')  { lx = mx;       ly = ch-lh-my; }
+        else                              { lx = cw-lw-mx; ly = ch-lh-my; }
+        ctx.globalAlpha = wmOpacity;
+        ctx.drawImage(logoImg, lx, ly, lw, lh);
+        ctx.globalAlpha = 1.0;
+      }
+    }
+    return;
+  }
 
   let margin  = Math.round(out.w * 0.028 * scale);
   const mainSz  = Math.round(out.w * fontPct * scale);
@@ -896,7 +943,7 @@ function drawOverlays(ctx, cw, ch) {
   const lineH   = Math.round(mainSz * 1.19);
   const pillH   = Math.round(superSz * 1.55);
 
-  ctx.font = `800 ${mainSz}px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.font = `800 ${mainSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
 
   // Wrap lines
   const lines = [];
@@ -923,7 +970,7 @@ function drawOverlays(ctx, cw, ch) {
   let cy = by + Math.round(ch * tOffY);
   margin += Math.round(cw * tOffX);
   if (superT) {
-    ctx.font = `800 ${superSz}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.font = `800 ${superSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
     const sw = ctx.measureText(superT.toUpperCase()).width;
     ctx.fillStyle = '#E8002D';
     ctx.fillRect(margin, cy, sw+pillPadX*2, pillH);
@@ -931,7 +978,7 @@ function drawOverlays(ctx, cw, ch) {
     ctx.fillText(superT.toUpperCase(), margin+pillPadX, cy+Math.round(pillH*0.72));
     cy += pillH+8;
   }
-  ctx.font = `800 ${mainSz}px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.font = `800 ${mainSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
   for (let i=0; i<lines.length; i++) {
     const ly = cy + i*lineH;
     const bw = ctx.measureText(lines[i]).width + boxPadX*2;
@@ -939,6 +986,30 @@ function drawOverlays(ctx, cw, ch) {
     ctx.fillRect(margin, ly, bw, lineH);
     ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
     ctx.fillText(lines[i], margin+boxPadX, ly+Math.round(lineH*0.75));
+  }
+
+  // Draw watermark logo on canvas
+  if (wmMode === 'image') {
+    const logoImg = customLogoImg || defaultLogoImg;
+    if (logoImg) {
+      const wmSzPct = parseInt(document.getElementById('wmSize').value)/100;
+      const wmMxPct = parseInt(document.getElementById('wmMx').value)/100;
+      const wmMyPct = parseInt(document.getElementById('wmMy').value)/100;
+      const wmOpacity = parseInt(document.getElementById('wmOpac').value)/100;
+      const shortSide = Math.min(cw, ch);
+      const lw = Math.round(shortSide * wmSzPct);
+      const lh = Math.round(lw * logoImg.height / logoImg.width);
+      const mx = Math.round(cw * wmMxPct);
+      const my = Math.round(ch * wmMyPct);
+      let lx, ly;
+      if      (wmPos === 'topleft')     { lx = mx;       ly = my; }
+      else if (wmPos === 'topright')    { lx = cw-lw-mx; ly = my; }
+      else if (wmPos === 'bottomleft')  { lx = mx;       ly = ch-lh-my; }
+      else                              { lx = cw-lw-mx; ly = ch-lh-my; }
+      ctx.globalAlpha = wmOpacity;
+      ctx.drawImage(logoImg, lx, ly, lw, lh);
+      ctx.globalAlpha = 1.0;
+    }
   }
 }
 
