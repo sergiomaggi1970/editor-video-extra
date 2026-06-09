@@ -71,20 +71,21 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
         f_main  = ImageFont.load_default()
         f_super = ImageFont.load_default()
 
-    # Word-wrap maintitle
+    # Word-wrap maintitle — respeita quebras manuais
     lines = []
     if maintitle:
-        words, cur = maintitle.split(), ''
         max_w = out_w - margin * 2 - box_px * 2
-        for w in words:
-            test = (cur + ' ' + w).strip()
-            bb   = draw.textbbox((0, 0), test, font=f_main)
-            if (bb[2] - bb[0]) <= max_w:
-                cur = test
-            else:
-                if cur: lines.append(cur)
-                cur = w
-        if cur: lines.append(cur)
+        for para in maintitle.split('\n'):
+            cur = ''
+            for w in para.split():
+                test = (cur + ' ' + w).strip()
+                bb = draw.textbbox((0, 0), test, font=f_main)
+                if (bb[2] - bb[0]) <= max_w:
+                    cur = test
+                else:
+                    if cur: lines.append(cur)
+                    cur = w
+            if cur: lines.append(cur)
 
     total_text_h = len(lines) * line_h
     total_h = (pill_h + 8 + total_text_h) if (supertitle and lines) else               (pill_h if supertitle else total_text_h)
@@ -945,17 +946,20 @@ function drawOverlays(ctx, cw, ch) {
 
   ctx.font = `800 ${mainSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
 
-  // Wrap lines
+  // Wrap lines — respeita \n do textarea
   const lines = [];
   if (mainT) {
-    const words = mainT.split(' '); let cur = '';
     const maxW = cw - margin*2 - boxPadX*2;
-    for (const w of words) {
-      const test = cur ? cur+' '+w : w;
-      if (ctx.measureText(test).width <= maxW) { cur = test; }
-      else { if(cur) lines.push(cur); cur = w; }
+    for (const para of mainT.split('\n')) {
+      let cur = '';
+      for (const w of para.split(' ')) {
+        if (!w) continue;
+        const test = cur ? cur+' '+w : w;
+        if (ctx.measureText(test).width <= maxW) { cur = test; }
+        else { if (cur) lines.push(cur); cur = w; }
+      }
+      if (cur) lines.push(cur);
     }
-    if (cur) lines.push(cur);
   }
 
   const totalTextH = lines.length * lineH;
