@@ -283,18 +283,9 @@ def render():
             cur_label = 'out'
 
         if fc_parts:
-            if cur_label not in ('out',):
-                fc_parts[-1] = fc_parts[-1].rstrip(']') if fc_parts[-1].endswith(']') else fc_parts[-1]
-                # Rename final label to 'out'
-                fc_parts = [p.replace(f'[{cur_label}]', '[out]') if p.endswith(f'[{cur_label}]') else p for p in fc_parts]
-                # Actually just map the last label
-                cur_label_for_map = cur_label
-            else:
-                cur_label_for_map = 'out'
-
             cmd_args = inputs + [
                 '-filter_complex', ';'.join(fc_parts),
-                '-map', f'[{cur_label_for_map}]', '-map', '0:a?',
+                '-map', f'[{cur_label}]', '-map', '0:a?',
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
                 str(out_path)
