@@ -247,6 +247,8 @@ def render():
 
         # Label for current video stream
         cur_label = '0:v'
+
+        # Crop
         if base_vf:
             fc_parts.append(f'[{cur_label}]' + ','.join(base_vf) + '[base]')
             cur_label = 'base'
@@ -255,13 +257,15 @@ def render():
         if title_overlay_path:
             inputs += ['-i', title_overlay_path]
             title_input = input_idx; input_idx += 1
-            fc_parts.append(f'[{cur_label}][{title_input}:v]overlay=0:0:enable=lt(t\\,{title_dur})[titled]')
-            cur_label = 'titled'
+            next_label = 'titled'
+            fc_parts.append(f'[{cur_label}][{title_input}:v]overlay=0:0:enable=lt(t\\,{title_dur})[{next_label}]')
+            cur_label = next_label
 
         # Scale to quality
         if scale_str:
-            fc_parts.append(f'[{cur_label}]{scale_str}[scaled]')
-            cur_label = 'scaled'
+            next_label = 'scaled'
+            fc_parts.append(f'[{cur_label}]{scale_str}[{next_label}]')
+            cur_label = next_label
 
         # Watermark overlay
         if has_wm_image:
@@ -277,9 +281,9 @@ def render():
             inputs += ['-i', logo_path]
             wm_input = input_idx; input_idx += 1
             fc_parts.append(
-                f'[{wm_input}:v]scale={wm_w}:-1,format=rgba,colorchannelmixer=aa={wm_opacity}[wm];'
-                f'[{cur_label}][wm]overlay={ox}:{oy}[out]'
+                f'[{wm_input}:v]scale={wm_w}:-1,format=rgba,colorchannelmixer=aa={wm_opacity}[wm]'
             )
+            fc_parts.append(f'[{cur_label}][wm]overlay={ox}:{oy}[out]')
             cur_label = 'out'
 
         if fc_parts:
@@ -304,6 +308,9 @@ def render():
         final_path = OUTPUT_DIR / out_name
         shutil.copy(str(out_path), str(final_path))
 
+        # Debug: log do comando usado
+        cmd_debug = ' '.join(str(a) for a in cmd_args)
+
         # Clean up old output files (keep last 20)
         try:
             files = sorted(OUTPUT_DIR.glob('*.mp4'), key=lambda f: f.stat().st_mtime)
@@ -312,7 +319,7 @@ def render():
         except Exception:
             pass
 
-        return jsonify({'ok': True, 'filename': out_name})
+        return jsonify({'ok': True, 'filename': out_name, 'debug_cmd': cmd_debug})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
