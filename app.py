@@ -51,7 +51,7 @@ def esc_ff(text):
 
 # ── Pillow title overlay (works on all FFmpeg builds) ─────────────────────────
 
-def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos):
+def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, offset_x=0.0, offset_y=0.0):
     """Render title overlay as transparent RGBA PNG using Pillow."""
     img  = Image.new('RGBA', (out_w, out_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -93,6 +93,10 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos)
     elif title_pos == 'top':    cy = int(out_h * 0.08)
     else:                        cy = (out_h - total_h) // 2
 
+    # Apply manual offsets
+    cy     += int(out_h * offset_y)
+    margin += int(out_w * offset_x)
+
     # Supertitle pill
     if supertitle:
         bb = draw.textbbox((0, 0), supertitle.upper(), font=f_super)
@@ -129,6 +133,8 @@ def render():
         title_dur   = float(request.form.get('title_dur', 6))
         title_pos   = request.form.get('title_pos', 'bottom')   # bottom / top / middle
         font_pct    = float(request.form.get('font_pct', 5.9)) / 100
+        title_offset_x = float(request.form.get('title_offset_x', 0)) / 100
+        title_offset_y = float(request.form.get('title_offset_y', 0)) / 100
         out_format  = request.form.get('out_format', '9:16')    # 9:16 / 16:9
         quality     = request.form.get('quality', '720p')
         wm_mode     = request.form.get('wm_mode', 'image')      # image / text / none
@@ -214,7 +220,7 @@ def render():
         title_filters = []
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos)
+            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
 
@@ -585,6 +591,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <span class="slider-val" id="fontSzVal">5.9%</span>
     </div>
     <div class="hint">Padrão O Globo = 5.9% da largura</div>
+    <label style="margin-top:8px">Ajuste vertical</label>
+    <div class="slider-row">
+      <input type="range" id="titleOffY" min="-50" max="50" value="0" oninput="updatePreview();document.getElementById('titleOffYVal').textContent=this.value+'%'">
+      <span class="slider-val" id="titleOffYVal">0%</span>
+    </div>
+    <label style="margin-top:6px">Ajuste horizontal</label>
+    <div class="slider-row">
+      <input type="range" id="titleOffX" min="-40" max="40" value="0" oninput="updatePreview();document.getElementById('titleOffXVal').textContent=this.value+'%'">
+      <span class="slider-val" id="titleOffXVal">0%</span>
+    </div>
   </div>
 
   <hr class="divider">
@@ -867,10 +883,12 @@ function drawOverlays(ctx, cw, ch) {
   const mainT  = document.getElementById('maintitle').value.trim();
   const fontPct = parseFloat(document.getElementById('fontSz').value)/100;
   const titlePos = document.getElementById('titlePos').value;
+  const tOffY = parseInt(document.getElementById('titleOffY').value)/100;
+  const tOffX = parseInt(document.getElementById('titleOffX').value)/100;
 
   if (!superT && !mainT) return;
 
-  const margin  = Math.round(out.w * 0.028 * scale);
+  let margin  = Math.round(out.w * 0.028 * scale);
   const mainSz  = Math.round(out.w * fontPct * scale);
   const superSz = Math.round(out.w * 0.035 * scale);
   const pillPadX= Math.round(out.w * 0.018 * scale);
@@ -902,7 +920,8 @@ function drawOverlays(ctx, cw, ch) {
   else if (titlePos==='top')    by = Math.round(outH*0.08);
   else                           by = (outH-totalH)>>1;
 
-  let cy = by;
+  let cy = by + Math.round(ch * tOffY);
+  margin += Math.round(cw * tOffX);
   if (superT) {
     ctx.font = `800 ${superSz}px 'Helvetica Neue', Arial, sans-serif`;
     const sw = ctx.measureText(superT.toUpperCase()).width;
@@ -967,8 +986,10 @@ async function renderVideo() {
   fd.append('supertitle',  document.getElementById('supertitle').value);
   fd.append('maintitle',   document.getElementById('maintitle').value);
   fd.append('title_dur',   document.getElementById('titleDur').value);
-  fd.append('title_pos',   document.getElementById('titlePos').value);
-  fd.append('font_pct',    document.getElementById('fontSz').value);
+  fd.append('title_pos',      document.getElementById('titlePos').value);
+  fd.append('font_pct',       document.getElementById('fontSz').value);
+  fd.append('title_offset_y', document.getElementById('titleOffY').value);
+  fd.append('title_offset_x', document.getElementById('titleOffX').value);
   fd.append('out_format',  outputFormat);
   fd.append('quality',     document.getElementById('quality').value);
   fd.append('wm_mode',     wmMode);
