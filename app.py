@@ -58,7 +58,7 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
 
     margin   = int(out_w * 0.028)
     main_sz  = int(out_w * font_pct)
-    super_sz = int(out_w * 0.035)
+    super_sz = int(main_sz * 0.593)
     pill_px  = int(out_w * 0.018)
     box_px   = int(out_w * 0.018)
     line_h   = int(main_sz * 1.19)
@@ -937,7 +937,7 @@ function drawOverlays(ctx, cw, ch) {
 
   let margin  = Math.round(out.w * 0.028 * scale);
   const mainSz  = Math.round(out.w * fontPct * scale);
-  const superSz = Math.round(out.w * 0.035 * scale);
+  const superSz = Math.round(mainSz * 0.593);
   const pillPadX= Math.round(out.w * 0.018 * scale);
   const boxPadX = Math.round(out.w * 0.018 * scale);
   const lineH   = Math.round(mainSz * 1.19);
