@@ -104,7 +104,7 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
         sw = bb[2] - bb[0]
         draw.rectangle([margin, cy, margin + sw + pill_px * 2, cy + pill_h],
                        fill=(232, 0, 45, 255))
-        draw.text((margin + pill_px, cy + int(pill_h * 0.15)),
+        draw.text((margin + pill_px - bb[0], cy + int((pill_h - (bb[3] - bb[1])) / 2) - bb[1]),
                   supertitle.upper(), font=f_super, fill=(255, 255, 255, 255))
         cy += pill_h + 8
 
@@ -112,10 +112,11 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
     for i, line in enumerate(lines):
         ly = cy + i * line_h
         bb = draw.textbbox((0, 0), line, font=f_main)
-        bw = (bb[2] - bb[0]) + box_px * 2
+        tw = bb[2] - bb[0]
+        bw = tw + box_px * 2
         draw.rectangle([margin, ly, margin + bw, ly + line_h],
                        fill=(0, 0, 0, int(255 * 0.9)))
-        draw.text((margin + box_px, ly + int(line_h * 0.10)),
+        draw.text((margin + box_px - bb[0], ly + int((line_h - (bb[3] - bb[1])) / 2) - bb[1]),
                   line, font=f_main, fill=(255, 255, 255, 255))
 
     return img
