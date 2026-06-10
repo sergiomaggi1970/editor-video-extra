@@ -4,7 +4,7 @@ Editor de Vídeo — O Globo / Extra
 Servidor Flask com FFmpeg nativo
 """
 
-import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re
+import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template_string
@@ -341,6 +341,16 @@ def serve_logo():
     if not Path(LOGO_PATH).exists():
         return 'Not found', 404
     return send_file(LOGO_PATH, mimetype='image/png')
+
+
+@app.route('/debug_title')
+def debug_title():
+    """Gera um title overlay de teste e retorna como PNG para diagnóstico."""
+    img = make_title_overlay(1080, 1920, 'FLAGRANTE', 'Macacos são vistos em telhados de Vila Isabel', 0.059, 'bottom')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
 
 
 @app.route('/stream/<filename>')
