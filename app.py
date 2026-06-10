@@ -240,6 +240,9 @@ def render():
         base_vf = []
         if crop_str:
             base_vf.append(crop_str)
+        elif vw != out_w or vh != out_h:
+            # Sem crop mas vídeo não está nas dimensões alvo — escala para elas
+            base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
         inputs = ['-i', str(in_path)]
