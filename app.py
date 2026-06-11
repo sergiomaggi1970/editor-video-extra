@@ -216,6 +216,12 @@ def render():
             scale_str = ''
             eff_w, eff_h = out_w, out_h
 
+        # Dimensões efetivas do vídeo após rotação metadata
+        if v_rotate in (90, 270):
+            eff_vw, eff_vh = vh, vw
+        else:
+            eff_vw, eff_vh = vw, vh
+
         # ── Crop filter ──────────────────────────────────────────────
         video_aspect = eff_vw / eff_vh
         target_aspect = out_w / out_h
@@ -237,12 +243,6 @@ def render():
             crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y},scale={out_w}:{out_h}'
         else:
             crop_str = ''
-
-        # Dimensões efetivas do vídeo (considerando rotação metadata)
-        if v_rotate in (90, 270):
-            eff_vw, eff_vh = vh, vw
-        else:
-            eff_vw, eff_vh = vw, vh
 
         final_w, final_h = out_w, out_h
 
