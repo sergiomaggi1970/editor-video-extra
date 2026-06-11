@@ -1234,6 +1234,10 @@ function createZoomButtons() {
 resizeCanvases();
 createZoomButtons();
 
+// Sem FFmpeg local — app usa servidor. Esconder overlay imediatamente.
+document.getElementById('overlay').classList.add('gone');
+setPill('Pronto','ready');
+
 // Carregar logo padrão do servidor
 (async function(){
   try{
