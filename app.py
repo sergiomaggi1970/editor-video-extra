@@ -186,9 +186,11 @@ def render():
         if vw == 0:
             return jsonify({'error': 'Não foi possível ler as dimensões do vídeo'}), 400
 
-        # Se o vídeo tem rotação 90/270, as dimensões reais são invertidas
-        if v_rotate in (90, 270, -90):
-            vw, vh = vh, vw
+        # Dimensões reais após aplicar o transpose (para cálculo de crop)
+        if v_rotate in (90, 270):
+            eff_vw, eff_vh = vh, vw  # transpose inverte largura/altura
+        else:
+            eff_vw, eff_vh = vw, vh
 
         # ── Output dimensions ────────────────────────────────────────
         if out_format == '9:16':
@@ -215,24 +217,23 @@ def render():
             eff_w, eff_h = out_w, out_h
 
         # ── Crop filter ──────────────────────────────────────────────
-        video_aspect = vw / vh
+        video_aspect = eff_vw / eff_vh
         target_aspect = out_w / out_h
         needs_crop = abs(video_aspect - target_aspect) > 0.05
 
         if needs_crop and crop_w > 0 and crop_h > 0:
             crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={out_w}:{out_h}'
         elif needs_crop:
-            # Auto-center crop
             if video_aspect > target_aspect:
-                auto_h = vh
-                auto_w = int(vh * target_aspect)
-                auto_x = (vw - auto_w) // 2
+                auto_h = eff_vh
+                auto_w = int(eff_vh * target_aspect)
+                auto_x = (eff_vw - auto_w) // 2
                 auto_y = 0
             else:
-                auto_w = vw
-                auto_h = int(vw / target_aspect)
+                auto_w = eff_vw
+                auto_h = int(eff_vw / target_aspect)
                 auto_x = 0
-                auto_y = (vh - auto_h) // 2
+                auto_y = (eff_vh - auto_h) // 2
             crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y},scale={out_w}:{out_h}'
         else:
             crop_str = ''
@@ -248,12 +249,6 @@ def render():
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
-        # Dimensões reais do vídeo após o transpose
-        if v_rotate in (90, 270):
-            post_transpose_w, post_transpose_h = vh, vw  # swap de volta (vw/vh já foram trocados)
-        else:
-            post_transpose_w, post_transpose_h = vw, vh
-
         # Step 1: base video filter
         base_vf = []
 
@@ -266,7 +261,7 @@ def render():
 
         if crop_str:
             base_vf.append(crop_str)
-        elif post_transpose_w != out_w or post_transpose_h != out_h:
+        elif eff_vw != out_w or eff_vh != out_h:
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
