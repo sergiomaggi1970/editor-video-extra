@@ -237,11 +237,16 @@ def render():
         else:
             crop_str = ''
 
-        # ── Title overlay via Pillow PNG (works on all FFmpeg builds) ──
-        title_filters = []
+        # Dimensões do frame após transpose (para o overlay PNG)
+        if v_rotate in (90, 270):
+            overlay_w, overlay_h = out_h, out_w  # transposto inverte
+        else:
+            overlay_w, overlay_h = out_w, out_h
+
+        # ── Title overlay via Pillow PNG ──────────────────────────────
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(overlay_w, overlay_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
 
@@ -250,9 +255,9 @@ def render():
 
         # ── Build FFmpeg command ──────────────────────────────────────
         # Step 1: base video filter
+        # IMPORTANTE: transpose deve ser o primeiro filtro, antes do crop/scale
         base_vf = []
 
-        # Corrigir rotação iPhone via transpose
         if v_rotate == 90:
             base_vf.append('transpose=1')
         elif v_rotate == 180:
@@ -261,6 +266,7 @@ def render():
             base_vf.append('transpose=2')
 
         if crop_str:
+            # crop_str já contém scale embutido (crop=...,scale=...)
             base_vf.append(crop_str)
         elif vw != out_w or vh != out_h:
             base_vf.append(f'scale={out_w}:{out_h}')
@@ -296,8 +302,8 @@ def render():
         if has_wm_image:
             wm_short = min(eff_w, eff_h)
             wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(eff_w * wm_margin_x)
-            wm_my    = int(eff_h * wm_margin_y)
+            wm_mx    = int(overlay_w * wm_margin_x)
+            wm_my    = int(overlay_h * wm_margin_y)
             if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
             elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
             elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
