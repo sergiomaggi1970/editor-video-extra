@@ -300,8 +300,8 @@ def render():
                     cy2 = (pt_h - ch2) // 2
                 base_vf.append(f'crop={cw2}:{ch2}:{cx2}:{cy2}')
 
-            if pt_w != out_w or pt_h != out_h:
-                base_vf.append(f'scale={out_w}:{out_h}')
+            # Sempre scale para out_w x out_h
+            base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
         inputs = ['-i', str(in_path)]
