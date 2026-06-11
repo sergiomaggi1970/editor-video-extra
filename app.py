@@ -237,16 +237,10 @@ def render():
         else:
             crop_str = ''
 
-        # Dimensões do frame após transpose (para o overlay PNG)
-        if v_rotate in (90, 270):
-            overlay_w, overlay_h = out_h, out_w  # transposto inverte
-        else:
-            overlay_w, overlay_h = out_w, out_h
-
         # ── Title overlay via Pillow PNG ──────────────────────────────
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(overlay_w, overlay_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
 
@@ -266,9 +260,9 @@ def render():
             base_vf.append('transpose=2')
 
         if crop_str:
-            # crop_str já contém scale embutido (crop=...,scale=...)
             base_vf.append(crop_str)
-        elif vw != out_w or vh != out_h:
+        else:
+            # Sempre forçar scale para out_w x out_h após qualquer rotação
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
