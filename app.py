@@ -147,7 +147,7 @@ def render():
         logo_file   = request.files.get('logo')
         supertitle  = request.form.get('supertitle', '').strip()
         maintitle   = request.form.get('maintitle', '').strip()
-        title_dur   = float(request.form.get('title_dur', 6))
+        title_dur   = float(request.form.get('title_dur', 6) or 6)
         title_pos   = request.form.get('title_pos', 'bottom')   # bottom / top / middle
         font_pct    = float(request.form.get('font_pct', 5.9)) / 100
         title_offset_x = float(request.form.get('title_offset_x', 0)) / 100
