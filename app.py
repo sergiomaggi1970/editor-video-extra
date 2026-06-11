@@ -259,7 +259,7 @@ def render():
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
-        # Step 1: base video filter
+        # Step 1: base video filter — transpose + crop + scale
         base_vf = []
 
         # Mapeamento correto: rotate metadata → filtro transpose para corrigir
