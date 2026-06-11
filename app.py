@@ -259,13 +259,15 @@ def render():
         # Step 1: base video filter
         base_vf = []
 
-        # Para vídeos com rotação metadata: transpose físico primeiro
+        # Para vídeos com rotação metadata: transpose físico correto
+        # rotate=90  → gravado virando esquerda → transpose=2 (90° anti-horário)
+        # rotate=270 → gravado virando direita  → transpose=1 (90° horário)
         if v_rotate == 90:
-            base_vf.append('transpose=1')
+            base_vf.append('transpose=2')
         elif v_rotate == 180:
             base_vf.append('vflip,hflip')
         elif v_rotate == 270:
-            base_vf.append('transpose=2')
+            base_vf.append('transpose=1')
 
         # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
         # Agora aplicar crop/scale para chegar em out_w x out_h
@@ -277,19 +279,20 @@ def render():
             post_aspect = post_tw / post_th
             target_aspect = out_w / out_h
             if abs(post_aspect - target_aspect) > 0.05:
-                # Precisa de crop para ajustar aspect ratio
+                # Crop centralizado sem distorção
                 if post_aspect > target_aspect:
-                    cw2 = int(post_th * target_aspect)
+                    # Frame mais largo que target: cortar nas laterais
                     ch2 = post_th
+                    cw2 = int(post_th * target_aspect)
                     cx2 = (post_tw - cw2) // 2
                     cy2 = 0
                 else:
+                    # Frame mais alto que target: cortar em cima/baixo
                     cw2 = post_tw
                     ch2 = int(post_tw / target_aspect)
                     cx2 = 0
                     cy2 = (post_th - ch2) // 2
                 base_vf.append(f'crop={cw2}:{ch2}:{cx2}:{cy2}')
-            # Sempre scale para out_w x out_h
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
