@@ -222,7 +222,7 @@ def render():
         needs_crop = abs(video_aspect - target_aspect) > 0.05
 
         if needs_crop and crop_w > 0 and crop_h > 0:
-            crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y}'
+            crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={out_w}:{out_h}'
         elif needs_crop:
             if video_aspect > target_aspect:
                 auto_h = eff_vh
@@ -234,14 +234,22 @@ def render():
                 auto_h = int(eff_vw / target_aspect)
                 auto_x = 0
                 auto_y = (eff_vh - auto_h) // 2
-            crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y}'
+            crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y},scale={out_w}:{out_h}'
         else:
             crop_str = ''
+
+        # Dimensões efetivas do vídeo (considerando rotação metadata)
+        if v_rotate in (90, 270):
+            eff_vw, eff_vh = vh, vw
+        else:
+            eff_vw, eff_vh = vw, vh
+
+        final_w, final_h = out_w, out_h
 
         # ── Title overlay via Pillow PNG ──────────────────────────────
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(final_w, final_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
 
@@ -250,20 +258,14 @@ def render():
 
         # ── Build FFmpeg command ──────────────────────────────────────
         # Step 1: base video filter
+        # Para vídeos com rotação metadata (iPhone): usar crop/scale nas dimensões
+        # efetivas (pós-rotação) e limpar o metadata no output em vez de transpor
         base_vf = []
-
-        if v_rotate == 90:
-            base_vf.append('transpose=1')
-        elif v_rotate == 180:
-            base_vf.append('vflip,hflip')
-        elif v_rotate == 270:
-            base_vf.append('transpose=2')
 
         if crop_str:
             base_vf.append(crop_str)
-
-        # Sempre escalar para out_w x out_h para garantir que overlay bate
-        base_vf.append(f'scale={out_w}:{out_h}')
+        elif eff_vw != out_w or eff_vh != out_h:
+            base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
         inputs = ['-i', str(in_path)]
@@ -294,10 +296,10 @@ def render():
 
         # Watermark overlay
         if has_wm_image:
-            wm_short = min(eff_w, eff_h)
+            wm_short = min(final_w, final_h)
             wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(eff_w * wm_margin_x)
-            wm_my    = int(eff_h * wm_margin_y)
+            wm_mx    = int(final_w * wm_margin_x)
+            wm_my    = int(final_h * wm_margin_y)
             if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
             elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
             elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
@@ -317,12 +319,14 @@ def render():
                 '-map', f'[{cur_label}]', '-map', '0:a?',
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
+                '-metadata:s:v:0', 'rotate=0',
                 str(out_path)
             ]
         else:
             cmd_args = inputs + [
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
+                '-metadata:s:v:0', 'rotate=0',
                 str(out_path)
             ]
 
