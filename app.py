@@ -42,22 +42,42 @@ def get_video_info(path):
     w = int(video.get('width', 0)) if video else 0
     h = int(video.get('height', 0)) if video else 0
     dur = float(fmt.get('duration', 0))
+    # Ler rotação do side_data_list (Display Matrix) ou tags
     rotate = 0
     if video:
-        # Tenta tags diretas primeiro
         try: rotate = int(video.get('tags', {}).get('rotate', 0))
         except: rotate = 0
-        # Depois side_data_list (FFmpeg moderno)
         if rotate == 0:
             for sd in video.get('side_data_list', []):
                 try:
                     rot = int(sd.get('rotation', 0))
                     if rot != 0:
-                        # side_data rotation é negativo: -90 = 270 graus
-                        rotate = rot % 360
+                        rotate = (-rot) % 360  # converte -90 → 270
                         break
                 except: pass
     return w, h, dur, rotate
+
+
+def prerotate_video(in_path, out_path, rotation):
+    """Pré-rotaciona vídeo fisicamente e remove Display Matrix."""
+    if rotation == 90:
+        vf = 'transpose=1'
+    elif rotation == 180:
+        vf = 'vflip,hflip'
+    elif rotation == 270:
+        vf = 'transpose=2'
+    else:
+        return False
+    cmd = ['ffmpeg', '-y', '-i', str(in_path),
+           '-vf', vf,
+           '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+           '-c:a', 'copy',
+           '-map_metadata', '-1',
+           '-map_chapters', '-1',
+           str(out_path)]
+    r = subprocess.run(cmd, capture_output=True)
+    return r.returncode == 0
+
 
 def esc_ff(text):
     """Escape text for FFmpeg drawtext filter."""
@@ -147,7 +167,7 @@ def render():
         logo_file   = request.files.get('logo')
         supertitle  = request.form.get('supertitle', '').strip()
         maintitle   = request.form.get('maintitle', '').strip()
-        title_dur   = float(request.form.get('title_dur', 6) or 6)
+        title_dur   = float(request.form.get('title_dur', 6))
         title_pos   = request.form.get('title_pos', 'bottom')   # bottom / top / middle
         font_pct    = float(request.form.get('font_pct', 5.9)) / 100
         title_offset_x = float(request.form.get('title_offset_x', 0)) / 100
@@ -186,11 +206,14 @@ def render():
         if vw == 0:
             return jsonify({'error': 'Não foi possível ler as dimensões do vídeo'}), 400
 
-        # Dimensões reais após aplicar o transpose (para cálculo de crop)
-        if v_rotate in (90, 270):
-            eff_vw, eff_vh = vh, vw  # transpose inverte largura/altura
-        else:
-            eff_vw, eff_vh = vw, vh
+        # Pré-rotacionar vídeos iPhone (Display Matrix) em arquivo temporário
+        if v_rotate in (90, 180, 270):
+            rotated_path = str(Path(tmp_dir) / 'rotated_input.mp4')
+            if prerotate_video(in_path, rotated_path, v_rotate):
+                in_path = rotated_path
+                # Após rotação, dimensões são trocadas para 90/270
+                if v_rotate in (90, 270):
+                    vw, vh = vh, vw
 
         # ── Output dimensions ────────────────────────────────────────
         if out_format == '9:16':
@@ -216,93 +239,53 @@ def render():
             scale_str = ''
             eff_w, eff_h = out_w, out_h
 
-        # Para vídeos com rotação metadata, o crop_str usa coordenadas erradas
-        # (calculadas nas dimensões pós-transpose mas aplicadas no frame pré-transpose)
-        # Zeramos e deixamos o base_vf calcular o crop correto após o transpose
-        if v_rotate != 0:
-            crop_str = ''
-            eff_vw, eff_vh = vh, vw
-        else:
-            eff_vw, eff_vh = vw, vh
-
         # ── Crop filter ──────────────────────────────────────────────
-        video_aspect = eff_vw / eff_vh
+        video_aspect = vw / vh
         target_aspect = out_w / out_h
         needs_crop = abs(video_aspect - target_aspect) > 0.05
 
         if needs_crop and crop_w > 0 and crop_h > 0:
             crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={out_w}:{out_h}'
         elif needs_crop:
+            # Auto-center crop
             if video_aspect > target_aspect:
-                auto_h = eff_vh
-                auto_w = int(eff_vh * target_aspect)
-                auto_x = (eff_vw - auto_w) // 2
+                auto_h = vh
+                auto_w = int(vh * target_aspect)
+                auto_x = (vw - auto_w) // 2
                 auto_y = 0
             else:
-                auto_w = eff_vw
-                auto_h = int(eff_vw / target_aspect)
+                auto_w = vw
+                auto_h = int(vw / target_aspect)
                 auto_x = 0
-                auto_y = (eff_vh - auto_h) // 2
+                auto_y = (vh - auto_h) // 2
             crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y},scale={out_w}:{out_h}'
         else:
             crop_str = ''
 
-        final_w, final_h = out_w, out_h
-
-        # ── Title overlay via Pillow PNG ──────────────────────────────
+        # ── Title overlay via Pillow PNG (works on all FFmpeg builds) ──
+        title_filters = []
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(final_w, final_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
+
         # ── Watermark ────────────────────────────────────────────────
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
-        # Step 1: base video filter — transpose + crop + scale
+        # Pipeline:
+        # [0:v] → crop/scale → [base]
+        # [base][title_png] → overlay(enable=lt(t,dur)) → [titled]
+        # [titled][logo_png] → overlay → [out]
+        # Then scale to quality
+
+        # Step 1: base video filter (crop + scale to output dims if needed)
         base_vf = []
-
-        # Mapeamento correto: rotate metadata → filtro transpose para corrigir
-        # rotate=90  → frame físico precisa de 90° anti-horário → transpose=2
-        # rotate=180 → flip horizontal + vertical
-        # rotate=270 → frame físico precisa de 90° horário + flip → transpose=3
-        if v_rotate == 90:
-            base_vf.append('transpose=1')
-        elif v_rotate == 180:
-            base_vf.append('vflip,hflip')
-        elif v_rotate == 270:
-            base_vf.append('transpose=2')
-        # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
-        # Agora aplicar crop/scale para chegar em out_w x out_h
-        post_tw, post_th = eff_vw, eff_vh
-
-        if crop_str and v_rotate == 0:
+        if crop_str:
             base_vf.append(crop_str)
-        else:
-            # Após transpose de vídeo com rotate=90/270, frame muda de dimensão
-            # Calcular aspect ratio do frame pós-transpose
-            if v_rotate in (90, 270):
-                pt_w, pt_h = vh, vw  # transpose inverte
-            else:
-                pt_w, pt_h = vw, vh
-
-            pt_aspect = pt_w / pt_h
-            target_aspect = out_w / out_h
-
-            if abs(pt_aspect - target_aspect) > 0.05:
-                if pt_aspect > target_aspect:
-                    cw2 = int(pt_h * target_aspect)
-                    ch2 = pt_h
-                    cx2 = (pt_w - cw2) // 2
-                    cy2 = 0
-                else:
-                    cw2 = pt_w
-                    ch2 = int(pt_w / target_aspect)
-                    cx2 = 0
-                    cy2 = (pt_h - ch2) // 2
-                base_vf.append(f'crop={cw2}:{ch2}:{cx2}:{cy2}')
-
-            # Sempre scale para out_w x out_h
+        elif vw != out_w or vh != out_h:
+            # Sem crop mas vídeo não está nas dimensões alvo — escala para elas
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
@@ -334,10 +317,10 @@ def render():
 
         # Watermark overlay
         if has_wm_image:
-            wm_short = min(final_w, final_h)
+            wm_short = min(eff_w, eff_h)
             wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(final_w * wm_margin_x)
-            wm_my    = int(final_h * wm_margin_y)
+            wm_mx    = int(eff_w * wm_margin_x)
+            wm_my    = int(eff_h * wm_margin_y)
             if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
             elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
             elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
@@ -378,7 +361,7 @@ def render():
         shutil.copy(str(out_path), str(final_path))
 
         # Debug: log do comando usado
-        cmd_debug = f'[rotate={v_rotate} vw={vw} vh={vh} eff_vw={eff_vw} eff_vh={eff_vh} base_vf={base_vf}] ' + ' '.join(str(a) for a in cmd_args)
+        cmd_debug = ' '.join(str(a) for a in cmd_args)
 
         # Clean up old output files (keep last 20)
         try:
@@ -412,33 +395,8 @@ def serve_logo():
     return send_file(LOGO_PATH, mimetype='image/png')
 
 
-@app.route('/probe/<filename>')
-def probe_file(filename):
-    path = OUTPUT_DIR / filename
-    if not path.exists():
-        return 'Not found', 404
-    cmd = ['ffprobe','-v','quiet','-print_format','json','-show_streams', str(path)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    return r.stdout, 200, {'Content-Type': 'application/json'}
-def debug_rotate(filename):
-    """Testa os 4 transposes e retorna qual produz frame correto."""
-    path = OUTPUT_DIR / filename
-    if not path.exists():
-        # Tentar uploads também
-        return 'Arquivo não encontrado. Use um arquivo já processado.', 404
-    results = {}
-    for t in range(4):
-        cmd = ['ffmpeg', '-y', '-i', str(path),
-               '-vf', f'transpose={t},scale=320:320:force_original_aspect_ratio=decrease',
-               '-vframes', '1', '-f', 'image2', 'pipe:1']
-        r = subprocess.run(cmd, capture_output=True)
-        if r.returncode == 0:
-            results[f'transpose={t}'] = base64.b64encode(r.stdout).decode()
-    html = '<html><body style="background:#000;display:flex;gap:10px;padding:20px">'
-    for k, v in results.items():
-        html += f'<div style="text-align:center"><p style="color:white">{k}</p><img src="data:image/jpeg;base64,{v}" style="height:300px"></div>'
-    html += '</body></html>'
-    return html
+@app.route('/debug_title')
+def debug_title():
     """Gera um title overlay de teste e retorna como PNG para diagnóstico."""
     img = make_title_overlay(1080, 1920, 'FLAGRANTE', 'Macacos são vistos em telhados de Vila Isabel', 0.059, 'bottom')
     buf = io.BytesIO()
@@ -741,11 +699,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="pos-btn" data-pos="bottomleft">↙ Inf. Esquerdo</div>
         <div class="pos-btn" data-pos="bottomright">↘ Inf. Direito</div>
       </div>
-      <div style="margin-top:8px">
-        <label>Margem H (%)</label>
-        <div class="slider-row"><input type="range" id="wmMx" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMxVal').textContent=this.value+'%'"><span class="slider-val" id="wmMxVal">11%</span></div>
-        <label style="margin-top:6px">Margem V (%)</label>
-        <div class="slider-row"><input type="range" id="wmMy" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMyVal').textContent=this.value+'%'"><span class="slider-val" id="wmMyVal">11%</span></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="flex:1"><label>Margem H (%)</label>
+          <div class="slider-row"><input type="range" id="wmMx" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMxVal').textContent=this.value+'%'"><span class="slider-val" id="wmMxVal">11%</span></div>
+        </div>
+        <div style="flex:1"><label>Margem V (%)</label>
+          <div class="slider-row"><input type="range" id="wmMy" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMyVal').textContent=this.value+'%'"><span class="slider-val" id="wmMyVal">11%</span></div>
+        </div>
       </div>
       <label style="margin-top:8px">Opacidade</label>
       <div class="slider-row">
