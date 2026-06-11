@@ -259,15 +259,16 @@ def render():
         # Step 1: base video filter
         base_vf = []
 
-        # Para vídeos com rotação metadata: transpose físico correto
-        # rotate=90  → gravado virando esquerda → transpose=2 (90° anti-horário)
-        # rotate=270 → gravado virando direita  → transpose=1 (90° horário)
+        # Mapeamento correto: rotate metadata → filtro transpose para corrigir
+        # rotate=90  → frame físico precisa de 90° anti-horário → transpose=2
+        # rotate=180 → flip horizontal + vertical
+        # rotate=270 → frame físico precisa de 90° horário + flip → transpose=3
         if v_rotate == 90:
             base_vf.append('transpose=2')
         elif v_rotate == 180:
             base_vf.append('vflip,hflip')
         elif v_rotate == 270:
-            base_vf.append('transpose=1')
+            base_vf.append('transpose=3')
 
         # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
         # Agora aplicar crop/scale para chegar em out_w x out_h
