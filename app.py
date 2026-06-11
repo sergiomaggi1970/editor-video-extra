@@ -923,11 +923,12 @@ function updateFormatUI() {
   if (!videoWidth) { hint.textContent=''; ctrl.classList.remove('visible'); ov.style.display='none'; return; }
   if (videoNeedsCrop()) {
     hint.style.color='#facc15'; hint.textContent='⚠ Arraste e zoom para enquadrar';
-    ctrl.classList.add('visible'); ov.style.display='block';
+    ov.style.display='block';
   } else {
     hint.style.color='#4ade80'; hint.textContent='✓ Vídeo já no formato correto';
-    ctrl.classList.remove('visible'); ov.style.display='none';
+    ov.style.display='block';
   }
+  ctrl.classList.add('visible'); // sempre mostrar zoom
   resizeCanvas();
 }
 
