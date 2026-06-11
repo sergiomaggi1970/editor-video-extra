@@ -42,15 +42,12 @@ def get_video_info(path):
     w = int(video.get('width', 0)) if video else 0
     h = int(video.get('height', 0)) if video else 0
     dur = float(fmt.get('duration', 0))
-    # Rotation metadata (iPhone videos)
+    # Rotation metadata — lê o valor bruto para corrigir dimensões
     rotate = 0
     if video:
         tags = video.get('tags', {})
-        rotate = int(tags.get('rotate', 0))
-        # Also check side_data_list
-        for sd in video.get('side_data_list', []):
-            if sd.get('side_data_type') == 'Display Matrix':
-                rotate = int(sd.get('rotation', rotate)) * -1
+        try: rotate = int(tags.get('rotate', 0))
+        except: rotate = 0
     return w, h, dur, rotate
 
 def esc_ff(text):
@@ -249,16 +246,8 @@ def render():
         # [titled][logo_png] → overlay → [out]
         # Then scale to quality
 
-        # Step 1: base video filter (rotate + crop + scale to output dims if needed)
+        # Step 1: base video filter (crop + scale to output dims if needed)
         base_vf = []
-
-        # Corrigir rotação de vídeos iPhone (metadata rotate)
-        if v_rotate == 90:
-            base_vf.append('transpose=1')
-        elif v_rotate == 180:
-            base_vf.append('transpose=2,transpose=2')
-        elif v_rotate in (270, -90):
-            base_vf.append('transpose=2')
 
         if crop_str:
             base_vf.append(crop_str)
@@ -266,7 +255,7 @@ def render():
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
-        inputs = ['-i', str(in_path)]
+        inputs = ['-autorotate', '1', '-i', str(in_path)]
         fc_parts = []
         input_idx = 1
 
