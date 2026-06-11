@@ -377,7 +377,7 @@ def render():
         shutil.copy(str(out_path), str(final_path))
 
         # Debug: log do comando usado
-        cmd_debug = f'[rotate={v_rotate}] ' + ' '.join(str(a) for a in cmd_args)
+        cmd_debug = f'[rotate={v_rotate} vw={vw} vh={vh} eff_vw={eff_vw} eff_vh={eff_vh} base_vf={base_vf}] ' + ' '.join(str(a) for a in cmd_args)
 
         # Clean up old output files (keep last 20)
         try:
