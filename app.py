@@ -358,7 +358,7 @@ def render():
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
                 '-map_metadata', '-1',
-                '-metadata:s:v:0', 'rotate=0',
+                '-map_chapters', '-1',
                 str(out_path)
             ]
         else:
@@ -366,7 +366,7 @@ def render():
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
                 '-map_metadata', '-1',
-                '-metadata:s:v:0', 'rotate=0',
+                '-map_chapters', '-1',
                 str(out_path)
             ]
 
