@@ -393,8 +393,26 @@ def serve_logo():
     return send_file(LOGO_PATH, mimetype='image/png')
 
 
-@app.route('/debug_title')
-def debug_title():
+@app.route('/debug_rotate/<filename>')
+def debug_rotate(filename):
+    """Testa os 4 transposes e retorna qual produz frame correto."""
+    path = OUTPUT_DIR / filename
+    if not path.exists():
+        # Tentar uploads também
+        return 'Arquivo não encontrado. Use um arquivo já processado.', 404
+    results = {}
+    for t in range(4):
+        cmd = ['ffmpeg', '-y', '-i', str(path),
+               '-vf', f'transpose={t},scale=320:320:force_original_aspect_ratio=decrease',
+               '-vframes', '1', '-f', 'image2', 'pipe:1']
+        r = subprocess.run(cmd, capture_output=True)
+        if r.returncode == 0:
+            results[f'transpose={t}'] = base64.b64encode(r.stdout).decode()
+    html = '<html><body style="background:#000;display:flex;gap:10px;padding:20px">'
+    for k, v in results.items():
+        html += f'<div style="text-align:center"><p style="color:white">{k}</p><img src="data:image/jpeg;base64,{v}" style="height:300px"></div>'
+    html += '</body></html>'
+    return html
     """Gera um title overlay de teste e retorna como PNG para diagnóstico."""
     img = make_title_overlay(1080, 1920, 'FLAGRANTE', 'Macacos são vistos em telhados de Vila Isabel', 0.059, 'bottom')
     buf = io.BytesIO()
