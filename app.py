@@ -268,7 +268,7 @@ def render():
         elif v_rotate == 180:
             base_vf.append('vflip,hflip')
         elif v_rotate == 270:
-            base_vf.append('transpose=3')
+            base_vf.append('transpose=0')
 
         # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
         # Agora aplicar crop/scale para chegar em out_w x out_h
