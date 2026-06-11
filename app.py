@@ -272,7 +272,6 @@ def render():
             base_vf.append('vflip,hflip')
         elif v_rotate == 270:
             base_vf.append('transpose=2')
-
         # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
         # Agora aplicar crop/scale para chegar em out_w x out_h
         post_tw, post_th = eff_vw, eff_vh
@@ -358,6 +357,7 @@ def render():
                 '-map', f'[{cur_label}]', '-map', '0:a?',
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
+                '-map_metadata', '-1',
                 '-metadata:s:v:0', 'rotate=0',
                 str(out_path)
             ]
@@ -365,6 +365,7 @@ def render():
             cmd_args = inputs + [
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                 '-c:a', 'copy', '-movflags', '+faststart',
+                '-map_metadata', '-1',
                 '-metadata:s:v:0', 'rotate=0',
                 str(out_path)
             ]
