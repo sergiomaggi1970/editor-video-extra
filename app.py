@@ -530,692 +530,740 @@ def index():
 
 # ── HTML Template ─────────────────────────────────────────────────────────────
 
-HTML_TEMPLATE = r"""<!DOCTYPE html>
+
+HTML_TEMPLATE = r"""
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Editor de Vídeo — O Globo</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@800&display=swap" rel="stylesheet">
+<title>Editor de Vídeo · Extra</title>
 <style>
-  :root {
-    --red: #E8002D; --bg: #0d0d0d; --sidebar: #111; --border: #222;
-    --text: #f0f0f0; --muted: #666; --radius: 8px; --font: 'Exo 2', 'Helvetica Neue', Arial, sans-serif;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; height: 100vh; display: flex; flex-direction: column; }
-  header { background: #111; border-bottom: 1px solid var(--border); padding: 0 20px; height: 48px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-  .logo { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
-  .badge { background: var(--red); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; }
-  main { flex: 1; display: grid; grid-template-columns: 240px 1fr; overflow: hidden; }
-  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-  .preview-area { background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px; gap: 12px; overflow-y: auto; }
-  .sec-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--red); text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
-  .sec-label::before { content: ''; width: 8px; height: 8px; background: var(--red); border-radius: 50%; flex-shrink: 0; }
-  .divider { border: none; border-top: 1px solid var(--border); }
-  label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-  input[type=text], input[type=number], textarea, select {
-    width: 100%; background: #1a1a1a; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text); padding: 8px 10px; font-size: 12px; font-family: var(--font);
-    outline: none; transition: border-color 0.15s;
-  }
-  input:focus, textarea:focus, select:focus { border-color: var(--red); }
-  textarea { resize: vertical; min-height: 70px; }
-  .hint { font-size: 10px; color: var(--muted); margin-top: 3px; }
-  .drop-zone {
-    border: 2px dashed var(--border); border-radius: var(--radius); padding: 18px;
-    text-align: center; cursor: pointer; transition: all 0.2s; position: relative; color: var(--muted);
-  }
-  .drop-zone:hover, .drop-zone.drag { border-color: var(--red); color: var(--text); }
-  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-  .drop-icon { font-size: 22px; margin-bottom: 6px; }
-  .tab-row { display: flex; gap: 5px; }
-  .tab-btn { flex: 1; padding: 7px; background: #111; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--muted); cursor: pointer; text-align: center; transition: all 0.15s; }
-  .tab-btn.active { border-color: var(--red); color: var(--red); background: rgba(232,0,45,0.08); font-weight: 600; }
-  .panel { display: none; } .panel.active { display: block; }
-  .slider-row { display: flex; align-items: center; gap: 8px; }
-  .slider-row input[type=range] { flex: 1; accent-color: var(--red); }
-  .slider-val { font-size: 11px; color: var(--muted); min-width: 36px; text-align: right; }
-  .wm-pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-  .pos-btn { padding: 7px; background: #111; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--muted); cursor: pointer; text-align: center; transition: all 0.15s; }
-  .pos-btn.active { border-color: var(--red); color: var(--red); background: rgba(232,0,45,0.08); }
-  .fmt-row { display: flex; gap: 5px; }
-  .fmt-btn { flex: 1; padding: 8px; background: #111; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--muted); cursor: pointer; text-align: center; transition: all 0.15s; }
-  .fmt-btn.active { border-color: var(--red); color: var(--red); background: rgba(232,0,45,0.08); font-weight: 600; }
-  .crop-hint { font-size: 11px; text-align: center; margin-top: 4px; color: var(--muted); }
-  .btn-primary { background: var(--red); color: #fff; border: none; border-radius: var(--radius); padding: 13px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer; width: 100%; transition: opacity 0.15s; }
-  .btn-primary:hover:not(:disabled) { opacity: 0.85; }
-  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-ef { background: #1a3a6b; color: #fff; border: none; border-radius: var(--radius); padding: 11px; font-size: 13px; font-weight: 700; font-family: var(--font); cursor: pointer; width: 100%; transition: opacity 0.15s; margin-top: 6px; }
-  .btn-ef:hover:not(:disabled) { opacity: 0.85; }
-  .btn-ef:disabled { opacity: 0.4; cursor: not-allowed; }
-  .progress-wrap { display: none; }
-  .progress-wrap.visible { display: block; }
-  .progress-lbl { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
-  .progress-bg { background: #222; border-radius: 4px; height: 6px; overflow: hidden; }
-  .progress-fill { background: var(--red); height: 100%; width: 0%; transition: width 0.3s; border-radius: 4px; }
-  .out-msg { padding: 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; display: none; }
-  .out-msg.ok { background: #0f2d1a; color: #4ade80; display: block; }
-  .out-msg.err { background: #2d0f0f; color: #f87171; display: block; }
-  .prev-label { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; align-self: flex-start; }
-  .canvas-wrap { position: relative; border-radius: 6px; overflow: hidden; box-shadow: 0 6px 32px rgba(0,0,0,0.7); flex-shrink: 0; }
-  canvas { display: block; max-width: 100%; }
-  #cropOverlay { position: absolute; inset: 0; cursor: grab; }
-  #cropOverlay:active { cursor: grabbing; }
-  .crop-controls { display: none; flex-direction: column; gap: 8px; width: 100%; max-width: 780px; }
-  .crop-controls.visible { display: flex; }
-  .ef-section { background: #0d1a2d; border: 1px solid #1a3a6b; border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-  .ef-section label { color: #93c5fd; }
-  .ef-section input { background: #111827; border-color: #1e3a5f; }
-  .ef-section .hint { color: #4b6fa0; }
-  img.logo-preview { max-height: 48px; max-width: 100%; object-fit: contain; display: block; margin: 6px auto; filter: invert(1); }
+:root {
+  --red:#E8002D; --bg:#0a0a0a; --panel:#111214; --panel2:#161719;
+  --border:#1e2023; --border2:#2a2d31; --text:#e8e8e8; --muted:#5a5e65;
+  --green:#22c55e; --yellow:#eab308; --font:'Helvetica Neue',Helvetica,Arial,sans-serif;
+  --radius:7px; --sw:288px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+header{height:44px;background:#0d0d0f;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0;user-select:none}
+.hlogo{display:flex;align-items:center;gap:8px}
+.hdot{width:10px;height:10px;background:var(--red);border-radius:50%;animation:pulse 2.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.hname{font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#fff}
+.hsep{width:1px;height:20px;background:var(--border2)}
+.hsub{font-size:11px;color:var(--muted);letter-spacing:.5px}
+.spill{margin-left:auto;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600}
+.spill.loading{background:rgba(234,179,8,.12);color:var(--yellow)}
+.spill.ready{background:rgba(34,197,94,.12);color:var(--green)}
+.spill.error{background:rgba(232,0,45,.12);color:var(--red)}
+
+main{flex:1;display:grid;grid-template-columns:var(--sw) 1fr;overflow:hidden}
+
+.sb{background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.sb::-webkit-scrollbar{width:4px}.sb::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+.blk{padding:14px 16px;border-bottom:1px solid var(--border)}
+.slbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.slbl::after{content:'';flex:1;height:1px;background:var(--border)}
+
+.dz{position:relative;border:1.5px dashed var(--border2);border-radius:var(--radius);padding:16px 12px;text-align:center;cursor:pointer;transition:all .2s;background:var(--panel2)}
+.dz:hover,.dz.drag{border-color:var(--red);background:rgba(232,0,45,.04)}
+.dz input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-size:20px;margin-bottom:6px}
+.dz-main{font-size:12px;color:var(--text);font-weight:500}
+.dz-sub{font-size:10px;color:var(--muted);margin-top:3px}
+
+label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px;margin-top:10px;letter-spacing:.3px}
+label:first-child{margin-top:0}
+input[type=text],input[type=number],textarea,select{width:100%;background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);padding:7px 10px;font-size:12px;font-family:var(--font);outline:none;transition:border-color .15s;-webkit-appearance:none}
+input:focus,textarea:focus,select:focus{border-color:var(--red)}
+textarea{resize:vertical;min-height:58px;line-height:1.4}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a5e65'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:26px;cursor:pointer}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hint{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4}
+
+.rrow{display:flex;align-items:center;gap:8px;margin-top:6px}
+.rrow input[type=range]{flex:1;accent-color:var(--red);height:3px;cursor:pointer}
+.rval{font-size:11px;color:var(--muted);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+
+.tabs{display:flex;gap:4px}
+.tb{flex:1;padding:6px 4px;font-size:11px;font-family:var(--font);background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--muted);cursor:pointer;text-align:center;transition:all .15s;white-space:nowrap}
+.tb:hover{border-color:var(--border);color:var(--text)}
+.tb.on{border-color:var(--red);color:var(--red);background:rgba(232,0,45,.06);font-weight:600}
+
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px}
+.pb{padding:6px;font-size:11px;font-family:var(--font);background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--muted);cursor:pointer;text-align:center;transition:all .15s}
+.pb:hover{border-color:var(--border);color:var(--text)}
+.pb.on{border-color:var(--red);color:var(--red);background:rgba(232,0,45,.06);font-weight:600}
+
+.fi{font-size:10px;padding:5px 8px;border-radius:5px;margin-top:6px;line-height:1.4;display:none}
+.fi.ok{background:rgba(34,197,94,.08);color:#4ade80;display:block}
+.fi.warn{background:rgba(234,179,8,.08);color:#fbbf24;display:block}
+
+.btn{width:100%;padding:11px;border:none;border-radius:var(--radius);font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;transition:all .15s;letter-spacing:.2px}
+.btn-r{background:var(--red);color:#fff;box-shadow:0 2px 12px rgba(232,0,45,.25)}
+.btn-r:hover:not(:disabled){background:#b8001f;box-shadow:0 4px 20px rgba(232,0,45,.35);transform:translateY(-1px)}
+.btn-r:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-r:active:not(:disabled){transform:translateY(0)}
+
+.prog{display:none;margin-top:10px}
+.prog.on{display:block}
+.prog-lbl{font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between}
+.prog-trk{height:3px;background:var(--border2);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;background:var(--red);border-radius:3px;width:0%;transition:width .4s ease}
+
+.omsg{margin-top:10px;padding:9px 11px;border-radius:var(--radius);font-size:12px;line-height:1.5;display:none}
+.omsg.ok{background:rgba(34,197,94,.08);color:#4ade80;border:1px solid rgba(34,197,94,.15);display:block}
+.omsg.err{background:rgba(232,0,45,.08);color:#f87171;border:1px solid rgba(232,0,45,.15);display:block}
+.omsg a{color:inherit;font-weight:700}
+
+.logo-box{background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);padding:10px;text-align:center;cursor:pointer;position:relative;transition:border-color .15s;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.logo-box:hover{border-color:var(--border)}
+.logo-box input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.logo-box img{max-height:32px;max-width:120px;object-fit:contain;filter:brightness(0) invert(1)}
+.logo-box .ll{font-size:10px;color:var(--muted)}
+
+.prev-area{background:#070709;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 24px;gap:12px;overflow-y:auto}
+.prev-lbl{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);align-self:flex-start}
+.cwrap{position:relative;border-radius:8px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.04);flex-shrink:0;cursor:grab}
+.cwrap:active{cursor:grabbing}
+canvas{display:block}
+
+#overlay{background:rgba(7,7,9,.95);position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100;transition:opacity .4s}
+#overlay.gone{opacity:0;pointer-events:none}
+.spin{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin-txt{font-size:13px;color:var(--muted);letter-spacing:.5px}
 </style>
 </head>
 <body>
+
+<div id="overlay">
+  <div class="spin"></div>
+  <div class="spin-txt" id="spinTxt" style="display:none"></div>
+</div>
+
 <header>
-  <div class="logo">● Globo</div>
-  <div class="badge">EDITOR DE VÍDEO</div>
+  <div class="hlogo"><div class="hdot"></div><span class="hname">Extra</span></div>
+  <div class="hsep"></div>
+  <span class="hsub">Editor de Vídeo</span>
+  <div class="spill loading" id="pill">Carregando…</div>
 </header>
+
 <main>
-<!-- ── Sidebar ── -->
-<div class="sidebar">
+<div class="sb">
 
-  <hr class="divider" style="margin:0">
+  <div class="blk">
+    <div class="slbl">Vídeo</div>
+    <div class="dz" id="dz">
+      <input type="file" id="vi" accept="video/*">
+      <div class="dz-icon">🎬</div>
+      <div class="dz-main" id="dzTxt">Arraste ou clique para selecionar</div>
+      <div class="dz-sub">MP4 · MOV · WebM</div>
+    </div>
+  </div>
 
-  <div>
-    <div class="sec-label">Títulos</div>
-    <div style="margin-bottom:6px">
-      <span style="font-size:10px;background:#1a3a6b;color:#93c5fd;padding:3px 8px;border-radius:4px;font-weight:600">Exo 2 ExtraBold</span>
-      <div class="hint" style="margin-top:4px">Equivalente ao Exo Soft Bold do Extra</div>
+  <div class="blk">
+    <div class="slbl">Títulos</div>
+    <label>Antetítulo · pílula vermelha</label>
+    <input type="text" id="supr" placeholder="EX: EXCLUSIVO" maxlength="60">
+    <label>Título principal · caixa preta</label>
+    <textarea id="titl" placeholder="Digite o título da matéria" rows="3"></textarea>
+    <div class="two" style="margin-top:10px">
+      <div><label>Duração (s)</label><input type="number" id="tdur" value="6" min="1" max="60" style="text-align:center"></div>
+      <div><label>Posição base</label><select id="tpos"><option value="bottom">Inferior</option><option value="top">Superior</option><option value="middle">Centro</option></select></div>
     </div>
-    <label>Antetítulo (pílula vermelha)</label>
-    <input type="text" id="supertitle" placeholder="BREAKING NEWS" oninput="updatePreview()">
-    <label style="margin-top:8px">Título principal (caixa preta)</label>
-    <textarea id="maintitle" placeholder="Texto do título aqui" oninput="updatePreview()"></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <div style="flex:1">
-        <label>Duração (s)</label>
-        <input type="number" id="titleDur" value="6" min="1" max="30" style="text-align:center">
-      </div>
-      <div style="flex:2">
-        <label>Posição vertical</label>
-        <select id="titlePos" onchange="updatePreview()">
-          <option value="bottom">Inferior (padrão)</option>
-          <option value="top">Superior</option>
-          <option value="middle">Centro</option>
-        </select>
-      </div>
-    </div>
-    <label style="margin-top:8px">Tamanho da fonte</label>
-    <div class="slider-row">
-      <input type="range" id="fontSz" min="2" max="10" step="0.1" value="5.9" oninput="updatePreview();document.getElementById('fontSzVal').textContent=parseFloat(this.value).toFixed(1)+'%'">
-      <span class="slider-val" id="fontSzVal">5.9%</span>
-    </div>
+    <label style="margin-top:10px">Ajuste vertical</label>
+    <div class="rrow"><input type="range" id="tOffY" min="-50" max="50" value="0"><span class="rval" id="tOffYV">0%</span></div>
+    <label>Ajuste horizontal</label>
+    <div class="rrow"><input type="range" id="tOffX" min="-40" max="40" value="0"><span class="rval" id="tOffXV">0%</span></div>
+    <label>Tamanho da fonte</label>
+    <div class="rrow"><input type="range" id="fsz" min="2" max="10" step="0.1" value="5.9"><span class="rval" id="fszV">5.9%</span></div>
     <div class="hint">Padrão O Globo = 5.9% da largura</div>
-    <label style="margin-top:8px">Ajuste vertical</label>
-    <div class="slider-row">
-      <input type="range" id="titleOffY" min="-50" max="50" value="0" oninput="updatePreview();document.getElementById('titleOffYVal').textContent=this.value+'%'">
-      <span class="slider-val" id="titleOffYVal">0%</span>
-    </div>
-    <label style="margin-top:6px">Ajuste horizontal</label>
-    <div class="slider-row">
-      <input type="range" id="titleOffX" min="-40" max="40" value="0" oninput="updatePreview();document.getElementById('titleOffXVal').textContent=this.value+'%'">
-      <span class="slider-val" id="titleOffXVal">0%</span>
-    </div>
   </div>
 
-  <hr class="divider">
-
-  <div>
-    <div class="sec-label">Marca d'água</div>
-    <div class="tab-row" id="wmTabs">
-      <div class="tab-btn active" data-tab="image">Logo Imagem</div>
-      <div class="tab-btn" data-tab="text">Texto</div>
-      <div class="tab-btn" data-tab="none">Nenhuma</div>
+  <div class="blk">
+    <div class="slbl">Marca d'água</div>
+    <div class="tabs" id="wmT">
+      <div class="tb on" data-t="image">Imagem</div>
+      <div class="tb" data-t="text">Texto</div>
+      <div class="tb" data-t="none">Nenhuma</div>
     </div>
-
-    <div class="panel active" id="panelImage" style="margin-top:8px">
-      <div class="drop-zone" id="logoDropZone" style="padding:10px">
-        <input type="file" id="logoInput" accept="image/*">
-        <div id="logoPreviewWrap">
-          {% if has_logo %}
-          <div style="font-size:11px;color:#4ade80;margin-bottom:4px">✓ Logo EXTRA carregada — clique para trocar</div>
-          <img src="/logo" class="logo-preview" style="filter:invert(1);max-height:36px;max-width:100%;display:block;margin:4px auto">
-          {% else %}
-          <div style="font-size:11px;color:var(--muted)">Clique para selecionar a logo</div>
-          {% endif %}
-        </div>
+    <div id="pImage" style="margin-top:10px">
+      <div class="logo-box" id="lgBox">
+        <input type="file" id="lgI" accept="image/*">
+        <div id="lgC"><div class="ll" id="lgLbl">Clique para selecionar logo</div></div>
       </div>
-      <label style="margin-top:8px">Largura da logo (% do vídeo)</label>
-      <div class="slider-row">
-        <input type="range" id="wmSize" min="5" max="50" value="25" oninput="updatePreview();document.getElementById('wmSizeVal').textContent=this.value+'%'">
-        <span class="slider-val" id="wmSizeVal">25%</span>
+      <label>Largura · % do vídeo</label>
+      <div class="rrow"><input type="range" id="wmSz" min="5" max="50" value="25"><span class="rval" id="wmSzV">25%</span></div>
+      <label>Posição</label>
+      <div class="pgrid" id="wmP">
+        <div class="pb on" data-p="topleft">↖ Sup. Esq.</div>
+        <div class="pb" data-p="topright">↗ Sup. Dir.</div>
+        <div class="pb" data-p="bottomleft">↙ Inf. Esq.</div>
+        <div class="pb" data-p="bottomright">↘ Inf. Dir.</div>
       </div>
-      <label style="margin-top:8px">Posição</label>
-      <div class="wm-pos-grid" id="wmPosGrid">
-        <div class="pos-btn active" data-pos="topleft">↖ Sup. Esquerdo</div>
-        <div class="pos-btn" data-pos="topright">↗ Sup. Direito</div>
-        <div class="pos-btn" data-pos="bottomleft">↙ Inf. Esquerdo</div>
-        <div class="pos-btn" data-pos="bottomright">↘ Inf. Direito</div>
+      <div class="two">
+        <div><label>Margem H</label><div class="rrow"><input type="range" id="wmMx" min="0" max="30" value="4"><span class="rval" id="wmMxV">4%</span></div></div>
+        <div><label>Margem V</label><div class="rrow"><input type="range" id="wmMy" min="0" max="30" value="4"><span class="rval" id="wmMyV">4%</span></div></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <div style="flex:1"><label>Margem H (%)</label>
-          <div class="slider-row"><input type="range" id="wmMx" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMxVal').textContent=this.value+'%'"><span class="slider-val" id="wmMxVal">11%</span></div>
-        </div>
-        <div style="flex:1"><label>Margem V (%)</label>
-          <div class="slider-row"><input type="range" id="wmMy" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMyVal').textContent=this.value+'%'"><span class="slider-val" id="wmMyVal">11%</span></div>
-        </div>
-      </div>
-      <label style="margin-top:8px">Opacidade</label>
-      <div class="slider-row">
-        <input type="range" id="wmOpac" min="10" max="100" value="100" oninput="updatePreview();document.getElementById('wmOpacVal').textContent=this.value+'%'">
-        <span class="slider-val" id="wmOpacVal">100%</span>
-      </div>
+      <label>Opacidade</label>
+      <div class="rrow"><input type="range" id="wmOp" min="10" max="100" value="100"><span class="rval" id="wmOpV">100%</span></div>
     </div>
-
-    <div class="panel" id="panelText" style="margin-top:8px">
-      <input type="text" id="wmText" placeholder="EXTRA" oninput="updatePreview()">
-    </div>
-    <div class="panel" id="panelNone"></div>
+    <div id="pText" style="margin-top:10px;display:none"><input type="text" id="wmTx" placeholder="EXTRA"></div>
+    <div id="pNone"></div>
   </div>
 
-  <hr class="divider">
-
-  <div>
-    <div class="sec-label">Formato de saída</div>
-    <div class="fmt-row">
-      <div class="fmt-btn active" data-fmt="9:16" id="fmt916">📱 9:16 Vertical</div>
-      <div class="fmt-btn" data-fmt="16:9" id="fmt169">🖥 16:9 Horizontal</div>
+  <div class="blk">
+    <div class="slbl">Formato de saída</div>
+    <div class="tabs" id="fmtT">
+      <div class="tb on" data-f="9:16">📱 9:16 Vertical</div>
+      <div class="tb" data-f="16:9">🖥 16:9 Horizontal</div>
     </div>
-    <div class="crop-hint" id="cropHint"></div>
+    <div class="fi" id="fmtI"></div>
   </div>
 
-  <hr class="divider">
+  <div class="blk" id="cropB" style="display:none">
+    <div class="slbl">Enquadramento</div>
+    <div class="hint" style="margin-bottom:8px">Arraste o preview · scroll = zoom</div>
+    <label>Zoom</label>
+    <div class="rrow"><input type="range" id="czS" min="100" max="500" value="100"><span class="rval" id="czV">1.0×</span></div>
+    <button id="czR" style="margin-top:8px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);padding:5px 12px;font-size:11px;color:var(--muted);cursor:pointer">↺ Resetar</button>
+  </div>
 
-  <div>
-    <label>Qualidade de saída</label>
-    <select id="quality">
-      <option value="original">Original (mais lento)</option>
-      <option value="720p" selected>720p (recomendado — mais rápido)</option>
-      <option value="540p">540p (mais rápido ainda)</option>
+  <div class="blk">
+    <div class="slbl">Processamento</div>
+    <label>Qualidade</label>
+    <select id="qual">
+      <option value="720p" selected>720p · recomendado (rápido)</option>
+      <option value="540p">540p · mais rápido ainda</option>
+      <option value="original">Original · sem redimensionar</option>
     </select>
-    <div class="hint">720p é suficiente para Instagram/redes sociais</div>
-  </div>
-
-  <div>
-    <button class="btn-primary" id="btnRender" onclick="renderVideo()" disabled>⚙️ Processar Vídeo</button>
-    <div class="progress-wrap" id="progressWrap" style="margin-top:10px">
-      <div class="progress-lbl" id="progressLbl">Processando…</div>
-      <div class="progress-bg"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="hint" style="margin-bottom:12px">720p é suficiente para Instagram</div>
+    <button class="btn btn-r" id="btnR" disabled>⚙ Processar Vídeo</button>
+    <div class="prog" id="progA">
+      <div class="prog-lbl"><span id="progL">Processando…</span><span id="progP">0%</span></div>
+      <div class="prog-trk"><div class="prog-fill" id="progF"></div></div>
     </div>
-    <div class="out-msg" id="outMsg"></div>
-  </div>
-
-  <hr class="divider">
-
-  <div class="ef-section" id="efSection" style="display:none">
-    <div class="sec-label" style="color:#93c5fd">🚀 Publicar no EF</div>
-    <div class="hint" style="color:#93c5fd;margin-bottom:8px">Requer a extensão <strong>Editor Globo → EF</strong> instalada no Chrome.</div>
-    <button class="btn-ef" id="btnEF" onclick="publishToEF()">🚀 Publicar no EF</button>
-    <div class="out-msg" id="efMsg"></div>
+    <div class="omsg" id="omsg"></div>
   </div>
 
 </div>
 
-<!-- ── Preview ── -->
-<div class="preview-area">
-  <!-- Drop zone acima do preview — some após carregar vídeo -->
-  <div id="dropZoneWrap" style="width:100%;max-width:700px">
-    <div class="drop-zone" id="dropZone" style="padding:24px 18px;display:flex;align-items:center;gap:16px;text-align:left">
-      <input type="file" id="videoInput" accept="video/*">
-      <div style="font-size:28px;flex-shrink:0">🎬</div>
-      <div>
-        <div style="font-size:13px;color:var(--text);font-weight:600" id="dropText">Arraste um vídeo ou clique para selecionar</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">MP4 · MOV · WebM</div>
-      </div>
-    </div>
+<div class="prev-area">
+  <div class="prev-lbl">Preview · atualiza ao digitar</div>
+  <div style="position:relative;display:inline-block;line-height:0">
+  <div class="cwrap" id="cw">
+    <canvas id="cv" width="390" height="693"></canvas>
+    <canvas id="cg" width="390" height="693" style="position:absolute;inset:0;pointer-events:none;display:none"></canvas>
   </div>
-  <div class="prev-label" id="prevLabel" style="display:none">PREVIEW — atualiza automaticamente ao digitar</div>
-  <div class="canvas-wrap" id="canvasWrap" style="display:none">
-    <canvas id="previewCanvas" width="390" height="693"></canvas>
-    <canvas id="cropOverlay" width="390" height="693" style="display:none"></canvas>
-  </div>
-  <div class="crop-controls" id="cropControls">
-    <div class="slider-row">
-      <span style="font-size:11px;color:var(--muted)">Zoom</span>
-      <input type="range" id="cropZoom" min="100" max="400" value="100" step="1" oninput="onZoomChange(this.value)">
-      <span class="slider-val" id="cropZoomVal">1.0×</span>
-    </div>
-    <button onclick="resetCrop()" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--muted);cursor:pointer">↺ Resetar enquadramento</button>
-  </div>
+</div>
 </div>
 </main>
 
+<video id="hv" muted playsinline preload="auto" style="display:none"></video>
+
 <script>
-// ── State ────────────────────────────────────────────────────────────────────
-let videoFile   = null;
-let logoFile    = null;   // null = use server default
-let videoWidth  = 0, videoHeight = 0;
-let outputFormat = '9:16';
-let cropX = 0, cropY = 0, cropZoom = 1.0;
-let cropDragging = false, cropDragSX = 0, cropDragSY = 0, cropDragOX = 0, cropDragOY = 0;
-let lastFilename = null;
-let wmPos = 'topleft';
-let wmMode = 'image';
-
-// Default logo (loaded from server)
-let defaultLogoImg = null;
-let customLogoImg  = null;
-(function loadDefaultLogo() {
-  const img = new Image();
-  img.onload = () => { defaultLogoImg = img; updatePreview(); };
-  img.src = '/logo';
-})();
-
-const hiddenVideo = document.createElement('video');
-hiddenVideo.muted = true; hiddenVideo.playsInline = true; hiddenVideo.preload = 'auto';
-
-// ── Video loading ─────────────────────────────────────────────────────────────
-document.getElementById('videoInput').addEventListener('change', function(e) {
-  const f = e.target.files[0]; if (!f) return; loadVideo(f);
-});
-const dz = document.getElementById('dropZone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) loadVideo(f); });
-
-function loadVideo(f) {
-  videoFile = f;
-  const mb = (f.size/1024/1024).toFixed(1);
-  const nm = f.name.length > 28 ? f.name.slice(0,25)+'…' : f.name;
-
-  const url = URL.createObjectURL(f);
-  hiddenVideo.onloadedmetadata = null; hiddenVideo.onseeked = null; hiddenVideo.oncanplay = null;
-  hiddenVideo.onloadedmetadata = function() {
-    videoWidth = hiddenVideo.videoWidth; videoHeight = hiddenVideo.videoHeight;
-    hiddenVideo.currentTime = Math.min(1.5, (hiddenVideo.duration||10)*0.1);
-    document.getElementById('btnRender').disabled = false;
-    // Esconder drop zone, mostrar canvas e label
-    document.getElementById('dropZoneWrap').style.display = 'none';
-    document.getElementById('prevLabel').style.display = 'block';
-    document.getElementById('canvasWrap').style.display = 'block';
-    updateFormatUI();
-  };
-  hiddenVideo.onseeked = function() { if (videoWidth > 0 && hiddenVideo.readyState >= 2) updatePreview(); };
-  hiddenVideo.oncanplay = function() { if (videoWidth > 0 && hiddenVideo.readyState >= 2) updatePreview(); };
-  hiddenVideo.src = url; hiddenVideo.load();
+// ── fetchFile polyfill ────────────────────────────────────────────────────────
+async function fetchFile(src) {
+  if (src instanceof File || src instanceof Blob) {
+    return new Uint8Array(await src.arrayBuffer());
+  }
+  if (typeof src === 'string') {
+    const r = await fetch(src);
+    return new Uint8Array(await r.arrayBuffer());
+  }
+  return new Uint8Array();
 }
 
-// ── Logo loading ──────────────────────────────────────────────────────────────
-document.getElementById('logoInput').addEventListener('change', function(e) {
-  const f = e.target.files[0]; if (!f) return;
-  logoFile = f;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    document.getElementById('logoPreviewWrap').innerHTML =
-      '<div style="font-size:11px;color:#4ade80;margin-bottom:4px">✓ ' + f.name + ' — clique para trocar</div>' +
-      '<img src="' + ev.target.result + '" class="logo-preview">';
-    const img = new Image();
-    img.onload = () => { customLogoImg = img; updatePreview(); };
-    img.src = ev.target.result;
+// ── State ─────────────────────────────────────────────────────────────────────
+let ready=true, ff=null;
+let vFile=null, lgURL=null, lgIsDefault=false;
+let vW=0, vH=0;
+let fmt='9:16', wmMode='image', wmPos='topleft';
+let cX=0,cY=0,cZ=1;
+let cDrag=false,cSX=0,cSY=0,cOX=0,cOY=0;
+let lastVURL=null;
+let lgImg=null, lgImgSrc=null;
+const hv=document.getElementById('hv');
+
+// ── FFmpeg init ───────────────────────────────────────────────────────────────
+async function initFF() {
+  try {
+    const {FFmpeg} = FFmpegWASM;
+    ff = new FFmpeg();
+    ff.on('log',({message:m})=>console.log('[FF]',m));
+    ff.on('progress',({progress:p})=>setProg(Math.round(p*100),`Renderizando… ${Math.round(p*100)}%`));
+    await ff.load({
+      coreURL:   './ffmpeg-core.js',
+      wasmURL:   './ffmpeg-core.wasm',
+      workerURL: './814.ffmpeg.js',
+    });
+    ready=true;
+    setPill('Pronto','ready');
+    document.getElementById('overlay').classList.add('gone');
+    loadDefaultLogo();
+  } catch(e) {
+    setPill('Erro','error');
+    document.getElementById('spinTxt').textContent='Erro: '+e.message;
+    console.error(e);
+  }
+}
+function setPill(t,c){const p=document.getElementById('pill');p.textContent=t;p.className='spill '+c;}
+
+// ── Default logo ──────────────────────────────────────────────────────────────
+async function loadDefaultLogo(){
+  try{
+    const r=await fetch('./extra_logo.png');
+    if(!r.ok)return;
+    const b=await r.blob();
+    lgURL=URL.createObjectURL(b); lgIsDefault=true;
+    setLogoPreview(lgURL,'Logo EXTRA · clique para trocar');
+    drawPrev();
+  }catch(e){console.log('no default logo')}
+}
+function setLogoPreview(url,lbl){
+  const c=document.getElementById('lgC');
+  c.innerHTML=`<img src="${url}"><div class="ll">${lbl}</div>`;
+  lgImg=null; lgImgSrc=null; // reset cached img
+}
+
+// ── Video ─────────────────────────────────────────────────────────────────────
+document.getElementById('vi').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadV(f);});
+const dz=document.getElementById('dz');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)loadV(f);});
+
+function loadV(f){
+  vFile=f;
+  const mb=(f.size/1024/1024).toFixed(1), nm=f.name.length>24?f.name.slice(0,21)+'…':f.name;
+  document.getElementById('dzTxt').textContent=`✓ ${nm}  (${mb} MB)`;
+  dz.style.borderColor='var(--green)';
+  if(lastVURL)URL.revokeObjectURL(lastVURL);
+  lastVURL=URL.createObjectURL(f);
+  hv.onloadedmetadata=null;hv.onseeked=null;hv.oncanplay=null;
+  hv.onloadedmetadata=()=>{
+    vW=hv.videoWidth;vH=hv.videoHeight;
+    hv.currentTime=Math.min(1.5,(hv.duration||10)*.1);
+    document.getElementById('btnR').disabled=!ready;
+    const zb=document.getElementById('zoomBtns');
+    if(zb) zb.style.display='flex';
+    updateFmtUI();
   };
-  reader.readAsDataURL(f);
+  hv.onseeked=()=>{if(vW&&hv.readyState>=2)drawPrev();};
+  hv.oncanplay=()=>{if(vW&&hv.readyState>=2)drawPrev();};
+  hv.src=lastVURL; hv.load();
+}
+
+// ── Logo input ────────────────────────────────────────────────────────────────
+document.getElementById('lgI').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(lgURL&&!lgIsDefault)URL.revokeObjectURL(lgURL);
+  lgURL=URL.createObjectURL(f);lgIsDefault=false;
+  setLogoPreview(lgURL,f.name+' · clique para trocar');
+  drawPrev();
 });
 
 // ── WM tabs ───────────────────────────────────────────────────────────────────
-document.getElementById('wmTabs').addEventListener('click', function(e) {
-  const btn = e.target.closest('.tab-btn'); if (!btn) return;
-  document.querySelectorAll('#wmTabs .tab-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  wmMode = btn.dataset.tab;
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('panel' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1)).classList.add('active');
-  updatePreview();
+document.getElementById('wmT').addEventListener('click',e=>{
+  const b=e.target.closest('.tb');if(!b)return;
+  document.querySelectorAll('#wmT .tb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); wmMode=b.dataset.t;
+  document.getElementById('pImage').style.display=wmMode==='image'?'block':'none';
+  document.getElementById('pText').style.display=wmMode==='text'?'block':'none';
+  drawPrev();
 });
 
-// ── WM position ───────────────────────────────────────────────────────────────
-document.getElementById('wmPosGrid').addEventListener('click', function(e) {
-  const btn = e.target.closest('.pos-btn'); if (!btn) return;
-  document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active'); wmPos = btn.dataset.pos; updatePreview();
+// ── WM pos ────────────────────────────────────────────────────────────────────
+document.getElementById('wmP').addEventListener('click',e=>{
+  const b=e.target.closest('.pb');if(!b)return;
+  document.querySelectorAll('.pb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');wmPos=b.dataset.p;drawPrev();
 });
 
-// ── Format buttons ────────────────────────────────────────────────────────────
-document.querySelectorAll('.fmt-btn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.fmt-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active'); outputFormat = btn.dataset.fmt;
-    cropX = 0; cropY = 0; cropZoom = 1;
-    document.getElementById('cropZoom').value = 100;
-    document.getElementById('cropZoomVal').textContent = '1.0×';
-    updateFormatUI(); updatePreview();
+// ── Format ────────────────────────────────────────────────────────────────────
+document.getElementById('fmtT').addEventListener('click',e=>{
+  const b=e.target.closest('.tb');if(!b)return;
+  document.querySelectorAll('#fmtT .tb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');fmt=b.dataset.f;
+  cX=0;cY=0;cZ=1;document.getElementById('czS').value=100;document.getElementById('czV').textContent='1.0×';
+  updateFmtUI();drawPrev();
+});
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+function sl(id,vid,sfx){
+  document.getElementById(id).addEventListener('input',function(){
+    document.getElementById(vid).textContent=this.value+sfx;drawPrev();
   });
+}
+sl('fsz','fszV','%');sl('wmSz','wmSzV','%');
+sl('tOffY','tOffYV','%');sl('tOffX','tOffXV','%');sl('wmMx','wmMxV','%');sl('wmMy','wmMyV','%');sl('wmOp','wmOpV','%');
+document.getElementById('czS').addEventListener('input',function(){
+  cZ=this.value/100;
+  document.getElementById('czV').textContent=cZ.toFixed(2)+'×';
+  updateCropBlockVisibility();
+  drawPrev();
+});
+document.getElementById('tpos').addEventListener('change',drawPrev);
+['supr','titl','wmTx'].forEach(id=>document.getElementById(id).addEventListener('input',drawPrev));
+document.getElementById('czR').addEventListener('click',()=>{
+  cX=0;cY=0;cZ=1;
+  document.getElementById('czS').value=100;
+  document.getElementById('czV').textContent='1.0×';
+  updateCropBlockVisibility();
+  drawPrev();
 });
 
-// ── Output dims ───────────────────────────────────────────────────────────────
-function getOutputDims() { return outputFormat === '9:16' ? {w:1080,h:1920} : {w:1920,h:1080}; }
-
-function videoNeedsCrop() {
-  if (!videoWidth) return false;
-  const t = outputFormat === '9:16' ? 9/16 : 16/9;
-  return Math.abs(videoWidth/videoHeight - t) > 0.05;
+function zoomStep(delta){
+  cZ=Math.max(1,Math.min(5,cZ+delta));
+  document.getElementById('czS').value=Math.round(cZ*100);
+  document.getElementById('czV').textContent=cZ.toFixed(2)+'×';
+  updateCropBlockVisibility();
+  drawPrev();
+}
+function zoomReset(){
+  cX=0;cY=0;cZ=1;
+  document.getElementById('czS').value=100;
+  document.getElementById('czV').textContent='1.0×';
+  updateCropBlockVisibility();
+  drawPrev();
+}
+function updateCropBlockVisibility(){
+  const cb=document.getElementById('cropB');
+  if(!vW){cb.style.display='none';return;}
+  if(needsCrop()||cZ>1.001) cb.style.display='block';
+  else cb.style.display='none';
 }
 
-function getCropRect() {
-  const out = getOutputDims();
-  const ta = out.w/out.h, vw = videoWidth, vh = videoHeight;
-  let cw, ch;
-  if (vw/vh > ta) { ch = vh; cw = Math.round(vh*ta); }
-  else             { cw = vw; ch = Math.round(vw/ta); }
-  cw = Math.round(cw/cropZoom); ch = Math.round(ch/cropZoom);
-  let x = Math.round((vw-cw)/2 + cropX);
-  let y = Math.round((vh-ch)/2 + cropY);
-  x = Math.max(0, Math.min(vw-cw, x));
-  y = Math.max(0, Math.min(vh-ch, y));
-  return {x, y, w:cw, h:ch};
+// ── Dims ──────────────────────────────────────────────────────────────────────
+function outDims(){return fmt==='9:16'?{w:1080,h:1920}:{w:1920,h:1080};}
+function needsCrop(){
+  if(!vW)return false;
+  const t=fmt==='9:16'?9/16:16/9;
+  return Math.abs(vW/vH-t)>.05;
+}
+function cropRect(){
+  const o=outDims(),ta=o.w/o.h;
+  let cw,ch;
+  if(vW/vH>ta){ch=vH;cw=Math.round(vH*ta);}else{cw=vW;ch=Math.round(vW/ta);}
+  cw=Math.round(cw/cZ);ch=Math.round(ch/cZ);
+  let x=Math.round((vW-cw)/2+cX),y=Math.round((vH-ch)/2+cY);
+  x=Math.max(0,Math.min(vW-cw,x));y=Math.max(0,Math.min(vH-ch,y));
+  return{x,y,w:cw,h:ch};
 }
 
-function updateFormatUI() {
-  const hint = document.getElementById('cropHint');
-  const ctrl = document.getElementById('cropControls');
-  const ov   = document.getElementById('cropOverlay');
-  if (!videoWidth) { hint.textContent=''; ctrl.classList.remove('visible'); ov.style.display='none'; return; }
-  if (videoNeedsCrop()) {
-    hint.style.color='#facc15'; hint.textContent='⚠ Arraste e zoom para enquadrar';
-    ov.style.display='block';
-  } else {
-    hint.style.color='#4ade80'; hint.textContent='✓ Vídeo já no formato correto';
-    ov.style.display='block';
+function updateFmtUI(){
+  const fi=document.getElementById('fmtI'),cb=document.getElementById('cropB');
+  if(!vW){fi.style.display='none';cb.style.display='none';return;}
+  fi.style.display='block';
+  if(needsCrop()){
+    fi.className='fi warn';fi.textContent='⚠ Vídeo em formato diferente — arraste e zoom para enquadrar';
+    cb.style.display='block';
+  }else{
+    fi.className='fi ok';fi.textContent='✓ Vídeo no formato correto';
+    cb.style.display='block';  // always show zoom controls
   }
-  ctrl.classList.add('visible'); // sempre mostrar zoom
-  resizeCanvas();
+  resizeCanvases();
 }
 
-function resizeCanvas() {
-  const out = getOutputDims(); const asp = out.w/out.h;
-  const avH = Math.min(window.innerHeight-120, 700);
-  let cw, ch;
-  if (asp >= 1) { cw = Math.min(780, window.innerWidth-340); ch = Math.round(cw/asp); if(ch>avH){ch=avH;cw=Math.round(avH*asp);} }
-  else          { ch = avH; cw = Math.round(avH*asp); }
-  ['previewCanvas','cropOverlay'].forEach(id => { const c=document.getElementById(id); c.width=cw; c.height=ch; });
+function resizeCanvases(){
+  const o=outDims(),asp=o.w/o.h;
+  const avH=Math.min(window.innerHeight-110,700);
+  const swW=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sw'))||288;
+  let cw,ch;
+  if(asp>=1){cw=Math.min(760,window.innerWidth-swW-48);ch=Math.round(cw/asp);if(ch>avH){ch=avH;cw=Math.round(avH*asp);}}
+  else{ch=avH;cw=Math.round(avH*asp);}
+  ['cv','cg'].forEach(id=>{const c=document.getElementById(id);c.width=cw;c.height=ch;});
+  const cg=document.getElementById('cg');
+  cg.style.display=(vW&&needsCrop())?'block':'none';
 }
 
-// ── Preview drawing ───────────────────────────────────────────────────────────
-function updatePreview() {
-  const canvas = document.getElementById('previewCanvas');
-  const ctx = canvas.getContext('2d');
-  resizeCanvas();
-  const cw = canvas.width, ch = canvas.height;
-  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,cw,ch);
-  if (!hiddenVideo.src || !videoWidth || hiddenVideo.readyState < 2) { drawCropGuide(); return; }
-
-  // Sempre usar getCropRect para que zoom/pan funcionem mesmo sem crop obrigatório
-  const r = getCropRect();
-  ctx.drawImage(hiddenVideo, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
-  drawOverlays(ctx, cw, ch);
-  drawCropGuide();
+// ── Logo img cache ────────────────────────────────────────────────────────────
+function getLgImg(){
+  if(!lgURL)return null;
+  if(lgImg&&lgImgSrc===lgURL)return lgImg;
+  const img=new Image();img.src=lgURL;img._src=lgURL;
+  img.onload=()=>{lgImg=img;lgImgSrc=lgURL;drawPrev();};
+  return null;
 }
 
-function drawOverlays(ctx, cw, ch) {
-  const out = getOutputDims();
-  const scale = cw / out.w;
-  const superT = document.getElementById('supertitle').value.trim();
-  const mainT  = document.getElementById('maintitle').value.trim();
-  const fontPct = parseFloat(document.getElementById('fontSz').value)/100;
-  const titlePos = document.getElementById('titlePos').value;
-  const tOffY = parseInt(document.getElementById('titleOffY').value)/100;
-  const tOffX = parseInt(document.getElementById('titleOffX').value)/100;
+// ── Preview ───────────────────────────────────────────────────────────────────
+function drawPrev(){
+  const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  resizeCanvases();
+  const cw=cv.width,ch=cv.height;
+  ctx.fillStyle='#111';ctx.fillRect(0,0,cw,ch);
+  if(!hv.src||!vW||hv.readyState<2){drawGuide();return;}
+  // Always use cropRect so zoom/pan works even when format matches
+  {const r=cropRect();ctx.drawImage(hv,r.x,r.y,r.w,r.h,0,0,cw,ch);}
+  drawTitles(ctx,cw,ch);
+  drawWm(ctx,cw,ch);
+  drawGuide();
+}
 
-  if (!superT && !mainT) {
-    // Ainda desenha a logo mesmo sem título
-    if (wmMode === 'image') {
-      const logoImg = customLogoImg || defaultLogoImg;
-      if (logoImg) {
-        const wmSzPct = parseInt(document.getElementById('wmSize').value)/100;
-        const wmMxPct = parseInt(document.getElementById('wmMx').value)/100;
-        const wmMyPct = parseInt(document.getElementById('wmMy').value)/100;
-        const wmOpacity = parseInt(document.getElementById('wmOpac').value)/100;
-        const shortSide = Math.min(cw, ch);
-        const lw = Math.round(shortSide * wmSzPct);
-        const lh = Math.round(lw * logoImg.height / logoImg.width);
-        const mx = Math.round(cw * wmMxPct);
-        const my = Math.round(ch * wmMyPct);
-        let lx, ly;
-        if      (wmPos === 'topleft')     { lx = mx;       ly = my; }
-        else if (wmPos === 'topright')    { lx = cw-lw-mx; ly = my; }
-        else if (wmPos === 'bottomleft')  { lx = mx;       ly = ch-lh-my; }
-        else                              { lx = cw-lw-mx; ly = ch-lh-my; }
-        ctx.globalAlpha = wmOpacity;
-        ctx.drawImage(logoImg, lx, ly, lw, lh);
-        ctx.globalAlpha = 1.0;
+function drawTitles(ctx,cw,ch){
+  const o=outDims(),scale=cw/o.w;
+  const sT=document.getElementById('supr').value.trim();
+  const mT=document.getElementById('titl').value.trim();
+  if(!sT&&!mT)return;
+  const fp=parseFloat(document.getElementById('fsz').value)/100;
+  const pos=document.getElementById('tpos').value;
+  const mg=Math.round(o.w*.028*scale),mSz=Math.round(o.w*fp*scale),sSz=Math.round(mSz*.593);
+  const pPx=Math.round(o.w*.018*scale),bPx=Math.round(o.w*.018*scale);
+  const lH=Math.round(mSz*1.19),pH=Math.round(sSz*1.55);
+  const lines=[];
+  if(mT){
+    ctx.font=`800 ${mSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
+    const mxW=cw-mg*2-bPx*2;
+    for(const para of mT.split('\n')){
+      let cur='';
+      for(const w of para.split(' ')){
+        if(!w)continue;
+        const test=cur?cur+' '+w:w;
+        if(ctx.measureText(test).width<=mxW)cur=test;
+        else{if(cur)lines.push(cur);cur=w;}
       }
+      if(cur)lines.push(cur);
     }
+  }
+  const totH=(sT&&lines.length?pH+8+lines.length*lH:sT?pH:lines.length*lH);
+  const tOffY=parseInt(document.getElementById('tOffY').value)/100;
+  const tOffX=parseInt(document.getElementById('tOffX').value)/100;
+  let cy=pos==='bottom'?Math.round(ch*.695)-totH:pos==='top'?Math.round(ch*.08):(ch-totH)>>1;
+  cy += Math.round(ch*tOffY);
+  const mgX = mg + Math.round(cw*tOffX);
+  if(sT){
+    ctx.font=`800 ${sSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
+    const sw=ctx.measureText(sT.toUpperCase()).width;
+    ctx.fillStyle='#E8002D';ctx.fillRect(mgX,cy,sw+pPx*2,pH);
+    ctx.fillStyle='#fff';ctx.textBaseline='alphabetic';
+    ctx.fillText(sT.toUpperCase(),mgX+pPx,cy+Math.round(pH*.72));cy+=pH+8;
+  }
+  ctx.font=`800 ${mSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
+  for(let i=0;i<lines.length;i++){
+    const ly=cy+i*lH,bw=ctx.measureText(lines[i]).width+bPx*2;
+    ctx.fillStyle='rgba(0,0,0,.9)';ctx.fillRect(mgX,ly,bw,lH);
+    ctx.fillStyle='#fff';ctx.textBaseline='alphabetic';
+    ctx.fillText(lines[i],mgX+bPx,ly+Math.round(lH*.77));
+  }
+}
+
+function drawWm(ctx,cw,ch){
+  if(wmMode!=='image')return;
+  const img=getLgImg();if(!img)return;
+  const sz=parseInt(document.getElementById('wmSz').value)/100;
+  const mx=parseInt(document.getElementById('wmMx').value)/100;
+  const my=parseInt(document.getElementById('wmMy').value)/100;
+  const op=parseInt(document.getElementById('wmOp').value)/100;
+  const side=Math.min(cw,ch),ww=Math.round(side*sz),wh=Math.round(ww*(img.naturalHeight/img.naturalWidth));
+  const mxP=Math.round(cw*mx),myP=Math.round(ch*my);
+  let ox,oy;
+  if(wmPos==='topleft'){ox=mxP;oy=myP;}
+  else if(wmPos==='topright'){ox=cw-ww-mxP;oy=myP;}
+  else if(wmPos==='bottomleft'){ox=mxP;oy=ch-wh-myP;}
+  else{ox=cw-ww-mxP;oy=ch-wh-myP;}
+  ctx.globalAlpha=op;ctx.drawImage(img,ox,oy,ww,wh);ctx.globalAlpha=1;
+}
+
+function drawGuide(){
+  const cg=document.getElementById('cg');
+  if(cg.style.display==='none')return;
+  const ctx=cg.getContext('2d'),cw=cg.width,ch=cg.height;
+  ctx.clearRect(0,0,cw,ch);
+  ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=.5;
+  for(let i=1;i<3;i++){
+    ctx.beginPath();ctx.moveTo(cw*i/3,0);ctx.lineTo(cw*i/3,ch);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,ch*i/3);ctx.lineTo(cw,ch*i/3);ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1;ctx.strokeRect(.5,.5,cw-1,ch-1);
+}
+
+// ── Drag/scroll crop ──────────────────────────────────────────────────────────
+const cw_el=document.getElementById('cw');
+cw_el.addEventListener('mousedown',e=>{cDrag=true;cSX=e.clientX;cSY=e.clientY;cOX=cX;cOY=cY;});
+window.addEventListener('mousemove',e=>{
+  if(!cDrag)return;
+  const cv=document.getElementById('cv'),r=cropRect();
+  const sx=r.w/cv.width,sy=r.h/cv.height;
+  cX=cOX-(e.clientX-cSX)*sx;cY=cOY-(e.clientY-cSY)*sy;drawPrev();
+});
+window.addEventListener('mouseup',()=>cDrag=false);
+cw_el.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const delta = e.ctrlKey ? e.deltaY * 0.01 : e.deltaY > 0 ? -0.08 : 0.08;
+  cZ = Math.max(1, Math.min(5, cZ + delta));
+  document.getElementById('czS').value = Math.round(cZ*100);
+  document.getElementById('czV').textContent = cZ.toFixed(2)+'×';
+  updateCropBlockVisibility();
+  drawPrev();
+},{passive:false});
+let lastPinchDist = 0;
+cw_el.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    cDrag=true;cSX=e.touches[0].clientX;cSY=e.touches[0].clientY;cOX=cX;cOY=cY;
+  } else if(e.touches.length===2){
+    cDrag=false;
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    lastPinchDist=Math.sqrt(dx*dx+dy*dy);
+  }
+},{passive:true});
+cw_el.addEventListener('touchmove',e=>{
+  if(e.touches.length===2){
+    // Pinch to zoom
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(lastPinchDist>0){
+      cZ=Math.max(1,Math.min(5,cZ*(dist/lastPinchDist)));
+      document.getElementById('czS').value=Math.round(cZ*100);
+      document.getElementById('czV').textContent=cZ.toFixed(2)+'×';
+      updateCropBlockVisibility();
+      drawPrev();
+    }
+    lastPinchDist=dist;
     return;
   }
-
-  let margin  = Math.round(out.w * 0.028 * scale);
-  const mainSz  = Math.round(out.w * fontPct * scale);
-  const superSz = Math.round(mainSz * 0.593);
-  const pillPadX= Math.round(out.w * 0.018 * scale);
-  const boxPadX = Math.round(out.w * 0.018 * scale);
-  const lineH   = Math.round(mainSz * 1.19);
-  const pillH   = Math.round(superSz * 1.55);
-
-  ctx.font = `800 ${mainSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
-
-  // Wrap lines — respeita \n do textarea
-  const lines = [];
-  if (mainT) {
-    const maxW = cw - margin*2 - boxPadX*2;
-    for (const para of mainT.split('\n')) {
-      let cur = '';
-      for (const w of para.split(' ')) {
-        if (!w) continue;
-        const test = cur ? cur+' '+w : w;
-        if (ctx.measureText(test).width <= maxW) { cur = test; }
-        else { if (cur) lines.push(cur); cur = w; }
-      }
-      if (cur) lines.push(cur);
-    }
-  }
-
-  const totalTextH = lines.length * lineH;
-  const totalH = (superT && lines.length) ? pillH+8+totalTextH : (superT ? pillH : totalTextH);
-  const outH = ch;
-
-  let by;
-  if      (titlePos==='bottom') by = Math.round(outH*0.695) - totalH;
-  else if (titlePos==='top')    by = Math.round(outH*0.08);
-  else                           by = (outH-totalH)>>1;
-
-  let cy = by + Math.round(ch * tOffY);
-  margin += Math.round(cw * tOffX);
-  if (superT) {
-    ctx.font = `800 ${superSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
-    const sw = ctx.measureText(superT.toUpperCase()).width;
-    ctx.fillStyle = '#E8002D';
-    ctx.fillRect(margin, cy, sw+pillPadX*2, pillH);
-    ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(superT.toUpperCase(), margin+pillPadX, cy+Math.round(pillH*0.72));
-    cy += pillH+8;
-  }
-  ctx.font = `800 ${mainSz}px 'Exo 2', 'Helvetica Neue', Arial, sans-serif`;
-  for (let i=0; i<lines.length; i++) {
-    const ly = cy + i*lineH;
-    const bw = ctx.measureText(lines[i]).width + boxPadX*2;
-    ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillRect(margin, ly, bw, lineH);
-    ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(lines[i], margin+boxPadX, ly+Math.round(lineH*0.75));
-  }
-
-  // Draw watermark logo on canvas
-  if (wmMode === 'image') {
-    const logoImg = customLogoImg || defaultLogoImg;
-    if (logoImg) {
-      const wmSzPct = parseInt(document.getElementById('wmSize').value)/100;
-      const wmMxPct = parseInt(document.getElementById('wmMx').value)/100;
-      const wmMyPct = parseInt(document.getElementById('wmMy').value)/100;
-      const wmOpacity = parseInt(document.getElementById('wmOpac').value)/100;
-      const shortSide = Math.min(cw, ch);
-      const lw = Math.round(shortSide * wmSzPct);
-      const lh = Math.round(lw * logoImg.height / logoImg.width);
-      const mx = Math.round(cw * wmMxPct);
-      const my = Math.round(ch * wmMyPct);
-      let lx, ly;
-      if      (wmPos === 'topleft')     { lx = mx;       ly = my; }
-      else if (wmPos === 'topright')    { lx = cw-lw-mx; ly = my; }
-      else if (wmPos === 'bottomleft')  { lx = mx;       ly = ch-lh-my; }
-      else                              { lx = cw-lw-mx; ly = ch-lh-my; }
-      ctx.globalAlpha = wmOpacity;
-      ctx.drawImage(logoImg, lx, ly, lw, lh);
-      ctx.globalAlpha = 1.0;
-    }
-  }
-}
-
-function drawCropGuide() {
-  const ov = document.getElementById('cropOverlay');
-  if (ov.style.display==='none') return;
-  const ctx = ov.getContext('2d'); const cw=ov.width, ch=ov.height;
-  ctx.clearRect(0,0,cw,ch);
-  ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=0.5;
-  for(let i=1;i<3;i++){ctx.beginPath();ctx.moveTo(cw*i/3,0);ctx.lineTo(cw*i/3,ch);ctx.stroke();ctx.beginPath();ctx.moveTo(0,ch*i/3);ctx.lineTo(cw,ch*i/3);ctx.stroke();}
-  ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1.5; ctx.strokeRect(1,1,cw-2,ch-2);
-}
-
-// ── Crop drag ─────────────────────────────────────────────────────────────────
-const cropOv = document.getElementById('cropOverlay');
-cropOv.addEventListener('mousedown', e => { cropDragging=true; cropDragSX=e.clientX; cropDragSY=e.clientY; cropDragOX=cropX; cropDragOY=cropY; });
-window.addEventListener('mousemove', e => {
-  if(!cropDragging)return;
-  const canvas=document.getElementById('previewCanvas'); const r=getCropRect();
-  const sx=r.w/canvas.width, sy=r.h/canvas.height;
-  cropX=cropDragOX-(e.clientX-cropDragSX)*sx; cropY=cropDragOY-(e.clientY-cropDragSY)*sy; updatePreview();
-});
-window.addEventListener('mouseup', ()=>cropDragging=false);
-cropOv.addEventListener('wheel', e=>{ e.preventDefault(); cropZoom=Math.max(1,Math.min(4,cropZoom+(e.deltaY>0?-0.05:0.05))); document.getElementById('cropZoom').value=Math.round(cropZoom*100); document.getElementById('cropZoomVal').textContent=cropZoom.toFixed(1)+'×'; updatePreview(); },{passive:false});
-// Touch
-cropOv.addEventListener('touchstart', e=>{ if(e.touches.length!==1)return; cropDragging=true; cropDragSX=e.touches[0].clientX; cropDragSY=e.touches[0].clientY; cropDragOX=cropX; cropDragOY=cropY; },{passive:true});
-cropOv.addEventListener('touchmove', e=>{ if(!cropDragging||e.touches.length!==1)return; const canvas=document.getElementById('previewCanvas'); const r=getCropRect(); const sx=r.w/canvas.width,sy=r.h/canvas.height; cropX=cropDragOX-(e.touches[0].clientX-cropDragSX)*sx; cropY=cropDragOY-(e.touches[0].clientY-cropDragSY)*sy; updatePreview(); },{passive:true});
-cropOv.addEventListener('touchend', ()=>cropDragging=false);
-
-function onZoomChange(v) { cropZoom=v/100; document.getElementById('cropZoomVal').textContent=cropZoom.toFixed(1)+'×'; updatePreview(); }
-function resetCrop() { cropX=0; cropY=0; cropZoom=1; document.getElementById('cropZoom').value=100; document.getElementById('cropZoomVal').textContent='1.0×'; updatePreview(); }
+  if(!cDrag||e.touches.length!==1)return;
+  const cv=document.getElementById('cv'),r=cropRect();
+  const sx=r.w/cv.width,sy=r.h/cv.height;
+  cX=cOX-(e.touches[0].clientX-cSX)*sx;cY=cOY-(e.touches[0].clientY-cSY)*sy;drawPrev();
+},{passive:true});
+cw_el.addEventListener('touchend',e=>{if(e.touches.length===0)cDrag=false;lastPinchDist=0;});
+window.addEventListener('resize',()=>{resizeCanvases();drawPrev();});
 
 // ── Render ────────────────────────────────────────────────────────────────────
-async function renderVideo() {
-  if (!videoFile) return;
-  const btn = document.getElementById('btnRender');
-  btn.disabled = true;
-  setProgress(5, 'Enviando vídeo para o servidor…');
-  showOut('', '');
+document.getElementById('btnR').addEventListener('click',renderVideo);
 
-  const fd = new FormData();
-  fd.append('video', videoFile);
-  if (logoFile) fd.append('logo', logoFile);
-
-  fd.append('supertitle',  document.getElementById('supertitle').value);
-  fd.append('maintitle',   document.getElementById('maintitle').value);
-  fd.append('title_dur',   document.getElementById('titleDur').value);
-  fd.append('title_pos',      document.getElementById('titlePos').value);
-  fd.append('font_pct',       document.getElementById('fontSz').value);
-  fd.append('title_offset_y', document.getElementById('titleOffY').value);
-  fd.append('title_offset_x', document.getElementById('titleOffX').value);
-  fd.append('out_format',  outputFormat);
-  fd.append('quality',     document.getElementById('quality').value);
-  fd.append('wm_mode',     wmMode);
-  fd.append('wm_pos',      wmPos);
-  fd.append('wm_size',     document.getElementById('wmSize').value);
-  fd.append('wm_margin_x', document.getElementById('wmMx').value);
-  fd.append('wm_margin_y', document.getElementById('wmMy').value);
-  fd.append('wm_opacity',  document.getElementById('wmOpac').value);
-
-  // Sempre enviar crop para que zoom/pan funcionem
-  const r = getCropRect();
-  fd.append('crop_x', r.x); fd.append('crop_y', r.y);
-  fd.append('crop_w', r.w); fd.append('crop_h', r.h);
-
-  setProgress(20, 'Processando com FFmpeg…');
-  try {
-    const resp = await fetch('/render', { method: 'POST', body: fd });
-    const data = await resp.json();
-    if (!resp.ok || data.error) {
-      showOut('err', '❌ Erro: ' + (data.error || resp.statusText));
-      btn.disabled = false;
-      hideProgress();
-      return;
+async function renderVideo(){
+  if(!vFile)return;
+  const btn=document.getElementById('btnR');
+  btn.disabled=true; setOut('','');
+  try{
+    setProg(10,'Enviando para o servidor…');
+    const fd=new FormData();
+    fd.append('video', vFile);
+    if(lgURL&&wmMode==='image'){
+      const r=await fetch(lgURL); const b=await r.blob();
+      fd.append('logo', b, 'logo.png');
     }
-    setProgress(100, '✅ Concluído!');
-    lastFilename = data.filename;
-    showOut('ok', `✅ <strong>${data.filename}</strong> processado com sucesso! <a href="/download/${data.filename}" download style="color:#4ade80">⬇ Baixar</a>`);
-
-    // Show EF section
-    document.getElementById('efSection').style.display = 'block';
-    document.getElementById('btnRender').disabled = false;
-  } catch(e) {
-    showOut('err', '❌ Erro de rede: ' + e.message);
-    btn.disabled = false;
-    hideProgress();
-  }
+    const o=outDims();
+    const r=cropRect();
+    fd.append('supertitle', document.getElementById('supr').value.trim());
+    fd.append('maintitle',  document.getElementById('titl').value.trim());
+    fd.append('title_dur',  document.getElementById('tdur').value||'6');
+    fd.append('title_pos',  document.getElementById('tpos').value);
+    fd.append('font_pct',   document.getElementById('fsz').value);
+    fd.append('title_offset_y', document.getElementById('tOffY').value);
+    fd.append('title_offset_x', document.getElementById('tOffX').value);
+    fd.append('out_format',  fmt);
+    fd.append('quality',     document.getElementById('qual').value);
+    fd.append('wm_mode',     wmMode);
+    fd.append('wm_pos',      wmPos);
+    fd.append('wm_size',     document.getElementById('wmSz').value);
+    fd.append('wm_margin_x', document.getElementById('wmMx').value);
+    fd.append('wm_margin_y', document.getElementById('wmMy').value);
+    fd.append('wm_opacity',  document.getElementById('wmOp').value);
+    // Sempre enviar crop/zoom
+    fd.append('crop_x', r.x); fd.append('crop_y', r.y);
+    fd.append('crop_w', r.w); fd.append('crop_h', r.h);
+    setProg(20,'Processando…');
+    const resp=await fetch('/render',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(!resp.ok||data.error) throw new Error(data.error||resp.statusText);
+    setProg(100,'✓ Concluído!');
+    const name=data.filename;
+    setOut('ok',`✓ <strong>${name}</strong> &nbsp; <a href="/download/${name}" download style="background:var(--red);color:#fff;padding:5px 12px;border-radius:5px;text-decoration:none;font-weight:700">⬇ Baixar</a>`);
+  }catch(e){
+    setOut('err','❌ Erro: '+e.message);console.error(e);
+  }finally{btn.disabled=false;}
 }
 
-function setProgress(pct, lbl) {
-  document.getElementById('progressWrap').classList.add('visible');
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressLbl').textContent = lbl;
+function setProg(pct,lbl){
+  const a=document.getElementById('progA');a.classList.add('on');
+  document.getElementById('progF').style.width=pct+'%';
+  document.getElementById('progL').textContent=lbl;
+  document.getElementById('progP').textContent=pct+'%';
 }
-function hideProgress() { document.getElementById('progressWrap').classList.remove('visible'); }
-function showOut(type, html) {
-  const el = document.getElementById('outMsg');
-  el.className = 'out-msg' + (type ? ' '+type : '');
-  el.innerHTML = html;
+function setOut(t,h){const e=document.getElementById('omsg');e.className='omsg'+(t?' '+t:'');e.innerHTML=h;}
+
+// ── Zoom buttons — created in JS, injected after canvas wrap ─────────────────
+function createZoomButtons() {
+  // Find the wrapper div (position:relative parent of cwrap)
+  const wrapper = document.getElementById('cw').parentElement;
+  const btns = document.createElement('div');
+  btns.id = 'zoomBtns';
+  btns.style.cssText = [
+    'position:absolute','bottom:12px','right:12px',
+    'display:none','flex-direction:column','gap:6px','z-index:50'
+  ].join(';');
+
+  const btnStyle = [
+    'width:36px','height:36px',
+    'background:rgba(10,10,10,0.8)',
+    'border:1px solid rgba(255,255,255,0.25)',
+    'border-radius:8px','color:#fff','font-size:22px',
+    'cursor:pointer','line-height:1','font-weight:300',
+    'display:flex','align-items:center','justify-content:center',
+    'transition:background .15s'
+  ].join(';');
+
+  [
+    ['+', () => zoomStep(0.25),  'Zoom in'],
+    ['−', () => zoomStep(-0.25), 'Zoom out'],
+    ['↺', () => zoomReset(),     'Resetar zoom'],
+  ].forEach(([label, fn, title]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.title = title;
+    b.style.cssText = btnStyle + (label === '↺' ? ';font-size:14px;color:#aaa' : '');
+    b.addEventListener('mouseenter', () => b.style.background = 'rgba(232,0,45,0.8)');
+    b.addEventListener('mouseleave', () => b.style.background = 'rgba(10,10,10,0.8)');
+    b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+    btns.appendChild(b);
+  });
+
+  wrapper.appendChild(btns);
 }
 
-// ── Publish to EF ─────────────────────────────────────────────────────────────
-async function publishToEF() {
-  if (!lastFilename) { alert('Processe o vídeo primeiro.'); return; }
-  const btn   = document.getElementById('btnEF');
-  const efMsg = document.getElementById('efMsg');
+// ── Boot ──────────────────────────────────────────────────────────────────────
+resizeCanvases();
+createZoomButtons();
 
-  const ante  = document.getElementById('supertitle').value.trim();
-  const title = document.getElementById('maintitle').value.trim();
-  const fullTitle = ante && title ? ante + ' — ' + title : (ante || title);
+// Carregar logo padrão do servidor
+(async function(){
+  try{
+    const r=await fetch('/logo');
+    if(!r.ok)return;
+    const b=await r.blob();
+    lgURL=URL.createObjectURL(b);
+    setLogoPreview(lgURL,'Logo EXTRA · clique para trocar');
+  }catch(e){}
+})();
 
-  // Store job data for the extension to pick up
-  btn.disabled = true; btn.textContent = '⏳ Abrindo EF…';
-  efMsg.className = ''; efMsg.textContent = '';
 
+// Load custom font for preview + OffscreenCanvas title rendering
+(async function loadCustomFont() {
   try {
-    // Register the pending job on the server so extension can fetch it
-    const resp = await fetch('/ef_job', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: lastFilename, title: fullTitle, description: title })
-    });
-    const job = await resp.json();
-
-    // Open EF — the extension content script will pick up the job
-    window.open('https://ef-gcp.globoi.com/videos/new?ef_job=' + job.job_id, '_blank');
-
-    btn.disabled = false; btn.textContent = '🚀 Publicar no EF';
-    efMsg.className = 'out-msg ok';
-    efMsg.textContent = '✅ EF aberto — a extensão está enviando o vídeo automaticamente.';
+    const font = new FontFace('GloboBold', 'url(./globo-bold.ttf)', {weight:'800'});
+    await font.load();
+    document.fonts.add(font);
+    console.log('[Font] GloboBold loaded ✓');
+    drawPrev(); // redraw preview with correct font
   } catch(e) {
-    btn.disabled = false; btn.textContent = '🚀 Publicar no EF';
-    efMsg.className = 'out-msg err';
-    efMsg.textContent = '❌ Erro: ' + e.message;
+    console.warn('[Font] Could not load GloboBold:', e.message);
   }
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-resizeCanvas();
-window.addEventListener('resize', () => { resizeCanvas(); updatePreview(); });
+})();
 </script>
 </body>
-</html>"""
+</html>
+
+"""
+
 
 if __name__ == '__main__':
     import os
