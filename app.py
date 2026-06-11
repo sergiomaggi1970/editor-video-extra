@@ -216,8 +216,11 @@ def render():
             scale_str = ''
             eff_w, eff_h = out_w, out_h
 
-        # Dimensões efetivas do vídeo após rotação metadata
-        if v_rotate in (90, 270):
+        # Para vídeos com rotação metadata, o crop_str usa coordenadas erradas
+        # (calculadas nas dimensões pós-transpose mas aplicadas no frame pré-transpose)
+        # Zeramos e deixamos o base_vf calcular o crop correto após o transpose
+        if v_rotate != 0:
+            crop_str = ''
             eff_vw, eff_vh = vh, vw
         else:
             eff_vw, eff_vh = vw, vh
