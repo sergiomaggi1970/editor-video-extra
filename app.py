@@ -1088,7 +1088,7 @@ function drawCropGuide() {
 
 // ── Crop drag ─────────────────────────────────────────────────────────────────
 const cropOv = document.getElementById('cropOverlay');
-cropOv.addEventListener('mousedown', e => { if(!videoNeedsCrop())return; cropDragging=true; cropDragSX=e.clientX; cropDragSY=e.clientY; cropDragOX=cropX; cropDragOY=cropY; });
+cropOv.addEventListener('mousedown', e => { cropDragging=true; cropDragSX=e.clientX; cropDragSY=e.clientY; cropDragOX=cropX; cropDragOY=cropY; });
 window.addEventListener('mousemove', e => {
   if(!cropDragging)return;
   const canvas=document.getElementById('previewCanvas'); const r=getCropRect();
@@ -1096,9 +1096,9 @@ window.addEventListener('mousemove', e => {
   cropX=cropDragOX-(e.clientX-cropDragSX)*sx; cropY=cropDragOY-(e.clientY-cropDragSY)*sy; updatePreview();
 });
 window.addEventListener('mouseup', ()=>cropDragging=false);
-cropOv.addEventListener('wheel', e=>{ if(!videoNeedsCrop())return; e.preventDefault(); cropZoom=Math.max(1,Math.min(4,cropZoom+(e.deltaY>0?-0.05:0.05))); document.getElementById('cropZoom').value=Math.round(cropZoom*100); document.getElementById('cropZoomVal').textContent=cropZoom.toFixed(1)+'×'; updatePreview(); },{passive:false});
+cropOv.addEventListener('wheel', e=>{ e.preventDefault(); cropZoom=Math.max(1,Math.min(4,cropZoom+(e.deltaY>0?-0.05:0.05))); document.getElementById('cropZoom').value=Math.round(cropZoom*100); document.getElementById('cropZoomVal').textContent=cropZoom.toFixed(1)+'×'; updatePreview(); },{passive:false});
 // Touch
-cropOv.addEventListener('touchstart', e=>{ if(!videoNeedsCrop()||e.touches.length!==1)return; cropDragging=true; cropDragSX=e.touches[0].clientX; cropDragSY=e.touches[0].clientY; cropDragOX=cropX; cropDragOY=cropY; },{passive:true});
+cropOv.addEventListener('touchstart', e=>{ if(e.touches.length!==1)return; cropDragging=true; cropDragSX=e.touches[0].clientX; cropDragSY=e.touches[0].clientY; cropDragOX=cropX; cropDragOY=cropY; },{passive:true});
 cropOv.addEventListener('touchmove', e=>{ if(!cropDragging||e.touches.length!==1)return; const canvas=document.getElementById('previewCanvas'); const r=getCropRect(); const sx=r.w/canvas.width,sy=r.h/canvas.height; cropX=cropDragOX-(e.touches[0].clientX-cropDragSX)*sx; cropY=cropDragOY-(e.touches[0].clientY-cropDragSY)*sy; updatePreview(); },{passive:true});
 cropOv.addEventListener('touchend', ()=>cropDragging=false);
 
