@@ -42,12 +42,21 @@ def get_video_info(path):
     w = int(video.get('width', 0)) if video else 0
     h = int(video.get('height', 0)) if video else 0
     dur = float(fmt.get('duration', 0))
-    # Rotation metadata — lê o valor bruto para corrigir dimensões
     rotate = 0
     if video:
-        tags = video.get('tags', {})
-        try: rotate = int(tags.get('rotate', 0))
+        # Tenta tags diretas primeiro
+        try: rotate = int(video.get('tags', {}).get('rotate', 0))
         except: rotate = 0
+        # Depois side_data_list (FFmpeg moderno)
+        if rotate == 0:
+            for sd in video.get('side_data_list', []):
+                try:
+                    rot = int(sd.get('rotation', 0))
+                    if rot != 0:
+                        # side_data rotation é negativo: -90 = 270 graus
+                        rotate = rot % 360
+                        break
+                except: pass
     return w, h, dur, rotate
 
 def esc_ff(text):
@@ -240,14 +249,16 @@ def render():
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
-        # Pipeline:
-        # [0:v] → crop/scale → [base]
-        # [base][title_png] → overlay(enable=lt(t,dur)) → [titled]
-        # [titled][logo_png] → overlay → [out]
-        # Then scale to quality
-
-        # Step 1: base video filter (crop + scale to output dims if needed)
+        # Step 1: base video filter
         base_vf = []
+
+        # Corrigir rotação iPhone via transpose
+        if v_rotate == 90:
+            base_vf.append('transpose=1')
+        elif v_rotate == 180:
+            base_vf.append('vflip,hflip')
+        elif v_rotate == 270:
+            base_vf.append('transpose=2')
 
         if crop_str:
             base_vf.append(crop_str)
@@ -255,7 +266,7 @@ def render():
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
-        inputs = ['-autorotate', '1', '-i', str(in_path)]
+        inputs = ['-i', str(in_path)]
         fc_parts = []
         input_idx = 1
 
@@ -323,7 +334,7 @@ def render():
         shutil.copy(str(out_path), str(final_path))
 
         # Debug: log do comando usado
-        cmd_debug = ' '.join(str(a) for a in cmd_args)
+        cmd_debug = f'[rotate={v_rotate}] ' + ' '.join(str(a) for a in cmd_args)
 
         # Clean up old output files (keep last 20)
         try:
