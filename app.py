@@ -501,7 +501,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header { background: #111; border-bottom: 1px solid var(--border); padding: 0 20px; height: 48px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
   .logo { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
   .badge { background: var(--red); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; }
-  main { flex: 1; display: grid; grid-template-columns: 300px 1fr; overflow: hidden; }
+  main { flex: 1; display: grid; grid-template-columns: 240px 1fr; overflow: hidden; }
   .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
   .preview-area { background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px; gap: 12px; overflow-y: auto; }
   .sec-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--red); text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
@@ -574,16 +574,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <!-- ── Sidebar ── -->
 <div class="sidebar">
 
-  <div>
-    <div class="sec-label">Vídeo</div>
-    <div class="drop-zone" id="dropZone">
-      <input type="file" id="videoInput" accept="video/*">
-      <div class="drop-icon">🎬</div>
-      <div id="dropText">Arraste um vídeo ou clique para selecionar<br><small>MP4, MOV, WebM</small></div>
-    </div>
-  </div>
-
-  <hr class="divider">
+  <hr class="divider" style="margin:0">
 
   <div>
     <div class="sec-label">Títulos</div>
@@ -726,8 +717,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <!-- ── Preview ── -->
 <div class="preview-area">
-  <div class="prev-label" id="prevLabel">PREVIEW — atualiza automaticamente ao digitar</div>
-  <div class="canvas-wrap" id="canvasWrap">
+  <!-- Drop zone acima do preview — some após carregar vídeo -->
+  <div id="dropZoneWrap" style="width:100%;max-width:700px">
+    <div class="drop-zone" id="dropZone" style="padding:24px 18px;display:flex;align-items:center;gap:16px;text-align:left">
+      <input type="file" id="videoInput" accept="video/*">
+      <div style="font-size:28px;flex-shrink:0">🎬</div>
+      <div>
+        <div style="font-size:13px;color:var(--text);font-weight:600" id="dropText">Arraste um vídeo ou clique para selecionar</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">MP4 · MOV · WebM</div>
+      </div>
+    </div>
+  </div>
+  <div class="prev-label" id="prevLabel" style="display:none">PREVIEW — atualiza automaticamente ao digitar</div>
+  <div class="canvas-wrap" id="canvasWrap" style="display:none">
     <canvas id="previewCanvas" width="390" height="693"></canvas>
     <canvas id="cropOverlay" width="390" height="693" style="display:none"></canvas>
   </div>
@@ -779,8 +781,6 @@ function loadVideo(f) {
   videoFile = f;
   const mb = (f.size/1024/1024).toFixed(1);
   const nm = f.name.length > 28 ? f.name.slice(0,25)+'…' : f.name;
-  document.getElementById('dropText').textContent = '✅ ' + nm + ' (' + mb + ' MB)';
-  dz.style.borderColor = '#1a5c35';
 
   const url = URL.createObjectURL(f);
   hiddenVideo.onloadedmetadata = null; hiddenVideo.onseeked = null; hiddenVideo.oncanplay = null;
@@ -788,6 +788,10 @@ function loadVideo(f) {
     videoWidth = hiddenVideo.videoWidth; videoHeight = hiddenVideo.videoHeight;
     hiddenVideo.currentTime = Math.min(1.5, (hiddenVideo.duration||10)*0.1);
     document.getElementById('btnRender').disabled = false;
+    // Esconder drop zone, mostrar canvas e label
+    document.getElementById('dropZoneWrap').style.display = 'none';
+    document.getElementById('prevLabel').style.display = 'block';
+    document.getElementById('canvasWrap').style.display = 'block';
     updateFormatUI();
   };
   hiddenVideo.onseeked = function() { if (videoWidth > 0 && hiddenVideo.readyState >= 2) updatePreview(); };
