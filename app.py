@@ -33,7 +33,7 @@ def ffmpeg_run(args, cwd=None):
     return result
 
 def get_video_info(path):
-    """Returns (width, height, duration) of a video file."""
+    """Returns (width, height, duration, rotation) of a video file."""
     cmd = ['ffprobe','-v','quiet','-print_format','json','-show_streams','-show_format', str(path)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     data = json.loads(r.stdout)
@@ -42,7 +42,16 @@ def get_video_info(path):
     w = int(video.get('width', 0)) if video else 0
     h = int(video.get('height', 0)) if video else 0
     dur = float(fmt.get('duration', 0))
-    return w, h, dur
+    # Rotation metadata (iPhone videos)
+    rotate = 0
+    if video:
+        tags = video.get('tags', {})
+        rotate = int(tags.get('rotate', 0))
+        # Also check side_data_list
+        for sd in video.get('side_data_list', []):
+            if sd.get('side_data_type') == 'Display Matrix':
+                rotate = int(sd.get('rotation', rotate)) * -1
+    return w, h, dur, rotate
 
 def esc_ff(text):
     """Escape text for FFmpeg drawtext filter."""
@@ -167,9 +176,13 @@ def render():
             use_custom_logo = True
 
         # ── Video dimensions ─────────────────────────────────────────
-        vw, vh, dur = get_video_info(str(in_path))
+        vw, vh, dur, v_rotate = get_video_info(str(in_path))
         if vw == 0:
             return jsonify({'error': 'Não foi possível ler as dimensões do vídeo'}), 400
+
+        # Se o vídeo tem rotação 90/270, as dimensões reais são invertidas
+        if v_rotate in (90, 270, -90):
+            vw, vh = vh, vw
 
         # ── Output dimensions ────────────────────────────────────────
         if out_format == '9:16':
@@ -236,12 +249,20 @@ def render():
         # [titled][logo_png] → overlay → [out]
         # Then scale to quality
 
-        # Step 1: base video filter (crop + scale to output dims if needed)
+        # Step 1: base video filter (rotate + crop + scale to output dims if needed)
         base_vf = []
+
+        # Corrigir rotação de vídeos iPhone (metadata rotate)
+        if v_rotate == 90:
+            base_vf.append('transpose=1')
+        elif v_rotate == 180:
+            base_vf.append('transpose=2,transpose=2')
+        elif v_rotate in (270, -90):
+            base_vf.append('transpose=2')
+
         if crop_str:
             base_vf.append(crop_str)
         elif vw != out_w or vh != out_h:
-            # Sem crop mas vídeo não está nas dimensões alvo — escala para elas
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
@@ -651,13 +672,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="pos-btn" data-pos="bottomleft">↙ Inf. Esquerdo</div>
         <div class="pos-btn" data-pos="bottomright">↘ Inf. Direito</div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <div style="flex:1"><label>Margem H (%)</label>
-          <div class="slider-row"><input type="range" id="wmMx" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMxVal').textContent=this.value+'%'"><span class="slider-val" id="wmMxVal">11%</span></div>
-        </div>
-        <div style="flex:1"><label>Margem V (%)</label>
-          <div class="slider-row"><input type="range" id="wmMy" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMyVal').textContent=this.value+'%'"><span class="slider-val" id="wmMyVal">11%</span></div>
-        </div>
+      <div style="margin-top:8px">
+        <label>Margem H (%)</label>
+        <div class="slider-row"><input type="range" id="wmMx" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMxVal').textContent=this.value+'%'"><span class="slider-val" id="wmMxVal">11%</span></div>
+        <label style="margin-top:6px">Margem V (%)</label>
+        <div class="slider-row"><input type="range" id="wmMy" min="0" max="30" value="11" oninput="updatePreview();document.getElementById('wmMyVal').textContent=this.value+'%'"><span class="slider-val" id="wmMyVal">11%</span></div>
       </div>
       <label style="margin-top:8px">Opacidade</label>
       <div class="slider-row">
