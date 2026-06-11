@@ -222,7 +222,7 @@ def render():
         needs_crop = abs(video_aspect - target_aspect) > 0.05
 
         if needs_crop and crop_w > 0 and crop_h > 0:
-            crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={out_w}:{out_h}'
+            crop_str = f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y}'
         elif needs_crop:
             if video_aspect > target_aspect:
                 auto_h = eff_vh
@@ -234,7 +234,7 @@ def render():
                 auto_h = int(eff_vw / target_aspect)
                 auto_x = 0
                 auto_y = (eff_vh - auto_h) // 2
-            crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y},scale={out_w}:{out_h}'
+            crop_str = f'crop={auto_w}:{auto_h}:{auto_x}:{auto_y}'
         else:
             crop_str = ''
 
@@ -261,8 +261,9 @@ def render():
 
         if crop_str:
             base_vf.append(crop_str)
-        elif eff_vw != out_w or eff_vh != out_h:
-            base_vf.append(f'scale={out_w}:{out_h}')
+
+        # Sempre escalar para out_w x out_h para garantir que overlay bate
+        base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
         inputs = ['-i', str(in_path)]
