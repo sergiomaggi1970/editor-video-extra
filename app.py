@@ -296,8 +296,8 @@ def render():
         if has_wm_image:
             wm_short = min(eff_w, eff_h)
             wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(overlay_w * wm_margin_x)
-            wm_my    = int(overlay_h * wm_margin_y)
+            wm_mx    = int(eff_w * wm_margin_x)
+            wm_my    = int(eff_h * wm_margin_y)
             if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
             elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
             elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
