@@ -274,7 +274,7 @@ def render():
         # Agora aplicar crop/scale para chegar em out_w x out_h
         post_tw, post_th = eff_vw, eff_vh
 
-        if crop_str:
+        if crop_str and v_rotate == 0:
             base_vf.append(crop_str)
         else:
             # Após transpose de vídeo com rotate=90/270, frame muda de dimensão
