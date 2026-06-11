@@ -412,7 +412,14 @@ def serve_logo():
     return send_file(LOGO_PATH, mimetype='image/png')
 
 
-@app.route('/debug_rotate/<filename>')
+@app.route('/probe/<filename>')
+def probe_file(filename):
+    path = OUTPUT_DIR / filename
+    if not path.exists():
+        return 'Not found', 404
+    cmd = ['ffprobe','-v','quiet','-print_format','json','-show_streams', str(path)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    return r.stdout, 200, {'Content-Type': 'application/json'}
 def debug_rotate(filename):
     """Testa os 4 transposes e retorna qual produz frame correto."""
     path = OUTPUT_DIR / filename
