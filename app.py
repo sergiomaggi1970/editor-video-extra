@@ -252,19 +252,44 @@ def render():
             overlay_img = make_title_overlay(final_w, final_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
-
         # ── Watermark ────────────────────────────────────────────────
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
         # Step 1: base video filter
-        # Para vídeos com rotação metadata (iPhone): usar crop/scale nas dimensões
-        # efetivas (pós-rotação) e limpar o metadata no output em vez de transpor
         base_vf = []
+
+        # Para vídeos com rotação metadata: transpose físico primeiro
+        if v_rotate == 90:
+            base_vf.append('transpose=1')
+        elif v_rotate == 180:
+            base_vf.append('vflip,hflip')
+        elif v_rotate == 270:
+            base_vf.append('transpose=2')
+
+        # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
+        # Agora aplicar crop/scale para chegar em out_w x out_h
+        post_tw, post_th = eff_vw, eff_vh
 
         if crop_str:
             base_vf.append(crop_str)
-        elif eff_vw != out_w or eff_vh != out_h:
+        else:
+            post_aspect = post_tw / post_th
+            target_aspect = out_w / out_h
+            if abs(post_aspect - target_aspect) > 0.05:
+                # Precisa de crop para ajustar aspect ratio
+                if post_aspect > target_aspect:
+                    cw2 = int(post_th * target_aspect)
+                    ch2 = post_th
+                    cx2 = (post_tw - cw2) // 2
+                    cy2 = 0
+                else:
+                    cw2 = post_tw
+                    ch2 = int(post_tw / target_aspect)
+                    cx2 = 0
+                    cy2 = (post_th - ch2) // 2
+                base_vf.append(f'crop={cw2}:{ch2}:{cx2}:{cy2}')
+            # Sempre scale para out_w x out_h
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
