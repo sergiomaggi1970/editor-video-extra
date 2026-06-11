@@ -682,6 +682,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div id="logoPreviewWrap">
           {% if has_logo %}
           <div style="font-size:11px;color:#4ade80;margin-bottom:4px">✓ Logo EXTRA carregada — clique para trocar</div>
+          <img src="/logo" class="logo-preview" style="filter:invert(1);max-height:36px;max-width:100%;display:block;margin:4px auto">
           {% else %}
           <div style="font-size:11px;color:var(--muted)">Clique para selecionar a logo</div>
           {% endif %}
@@ -950,16 +951,9 @@ function updatePreview() {
   ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,cw,ch);
   if (!hiddenVideo.src || !videoWidth || hiddenVideo.readyState < 2) { drawCropGuide(); return; }
 
-  if (videoNeedsCrop()) {
-    const r = getCropRect();
-    ctx.drawImage(hiddenVideo, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
-  } else {
-    const va = videoWidth/videoHeight, ca = cw/ch;
-    let sx=0,sy=0,sw=videoWidth,sh=videoHeight;
-    if (va>ca) { sw=Math.round(videoHeight*ca); sx=Math.round((videoWidth-sw)/2); }
-    else        { sh=Math.round(videoWidth/ca);  sy=Math.round((videoHeight-sh)/2); }
-    ctx.drawImage(hiddenVideo, sx, sy, sw, sh, 0, 0, cw, ch);
-  }
+  // Sempre usar getCropRect para que zoom/pan funcionem mesmo sem crop obrigatório
+  const r = getCropRect();
+  ctx.drawImage(hiddenVideo, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
   drawOverlays(ctx, cw, ch);
   drawCropGuide();
 }
@@ -1139,12 +1133,10 @@ async function renderVideo() {
   fd.append('wm_margin_y', document.getElementById('wmMy').value);
   fd.append('wm_opacity',  document.getElementById('wmOpac').value);
 
-  // Crop params
-  if (videoNeedsCrop()) {
-    const r = getCropRect();
-    fd.append('crop_x', r.x); fd.append('crop_y', r.y);
-    fd.append('crop_w', r.w); fd.append('crop_h', r.h);
-  }
+  // Sempre enviar crop para que zoom/pan funcionem
+  const r = getCropRect();
+  fd.append('crop_x', r.x); fd.append('crop_y', r.y);
+  fd.append('crop_w', r.w); fd.append('crop_h', r.h);
 
   setProgress(20, 'Processando com FFmpeg…');
   try {
