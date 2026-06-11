@@ -246,10 +246,15 @@ def render():
 
         final_w, final_h = out_w, out_h
 
+        # Para vídeos com rotação metadata, usar dimensões físicas reais para o overlay
+        # pois não fazemos transpose — o arquivo físico já está nas dimensões corretas
+        overlay_w = vw if v_rotate in (90, 270) else out_w
+        overlay_h = vh if v_rotate in (90, 270) else out_h
+
         # ── Title overlay via Pillow PNG ──────────────────────────────
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(final_w, final_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(overlay_w, overlay_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
         # ── Watermark ────────────────────────────────────────────────
@@ -263,12 +268,11 @@ def render():
         # rotate=90  → frame físico precisa de 90° anti-horário → transpose=2
         # rotate=180 → flip horizontal + vertical
         # rotate=270 → frame físico precisa de 90° horário + flip → transpose=3
-        if v_rotate == 90:
-            base_vf.append('transpose=2')
-        elif v_rotate == 180:
-            base_vf.append('vflip,hflip')
-        elif v_rotate == 270:
-            base_vf.append('transpose=0')
+        # Vídeos iPhone: o arquivo físico já tem as dimensões corretas (ex: 1080x1920)
+        # O metadata rotate apenas indica ao player como exibir
+        # Não fazemos transpose — apenas zeramos o metadata no output
+        # e usamos eff_vw x eff_vh para crop/scale
+        pass  # sem transpose
 
         # Após transpose, as dimensões físicas do frame são eff_vw x eff_vh
         # Agora aplicar crop/scale para chegar em out_w x out_h
@@ -277,23 +281,11 @@ def render():
         if crop_str:
             base_vf.append(crop_str)
         else:
-            post_aspect = post_tw / post_th
-            target_aspect = out_w / out_h
-            if abs(post_aspect - target_aspect) > 0.05:
-                # Crop centralizado sem distorção
-                if post_aspect > target_aspect:
-                    # Frame mais largo que target: cortar nas laterais
-                    ch2 = post_th
-                    cw2 = int(post_th * target_aspect)
-                    cx2 = (post_tw - cw2) // 2
-                    cy2 = 0
-                else:
-                    # Frame mais alto que target: cortar em cima/baixo
-                    cw2 = post_tw
-                    ch2 = int(post_tw / target_aspect)
-                    cx2 = 0
-                    cy2 = (post_th - ch2) // 2
-                base_vf.append(f'crop={cw2}:{ch2}:{cx2}:{cy2}')
+            # Usar dimensões físicas reais para decidir scale
+            phys_w = vw if v_rotate in (90, 270) else eff_vw
+            phys_h = vh if v_rotate in (90, 270) else eff_vh
+            if phys_w != out_w or phys_h != out_h:
+                base_vf.append(f'scale={out_w}:{out_h}')
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
