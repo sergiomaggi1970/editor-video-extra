@@ -248,8 +248,13 @@ def render():
         has_wm_image = (wm_mode == 'image') and Path(logo_path).exists()
 
         # ── Build FFmpeg command ──────────────────────────────────────
+        # Dimensões reais do vídeo após o transpose
+        if v_rotate in (90, 270):
+            post_transpose_w, post_transpose_h = vh, vw  # swap de volta (vw/vh já foram trocados)
+        else:
+            post_transpose_w, post_transpose_h = vw, vh
+
         # Step 1: base video filter
-        # IMPORTANTE: transpose deve ser o primeiro filtro, antes do crop/scale
         base_vf = []
 
         if v_rotate == 90:
@@ -261,8 +266,7 @@ def render():
 
         if crop_str:
             base_vf.append(crop_str)
-        else:
-            # Sempre forçar scale para out_w x out_h após qualquer rotação
+        elif post_transpose_w != out_w or post_transpose_h != out_h:
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
