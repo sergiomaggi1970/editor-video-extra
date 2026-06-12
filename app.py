@@ -206,14 +206,11 @@ def render():
         if vw == 0:
             return jsonify({'error': 'Não foi possível ler as dimensões do vídeo'}), 400
 
-        # Pré-rotacionar vídeos iPhone (Display Matrix) em arquivo temporário
-        if v_rotate in (90, 180, 270):
-            rotated_path = str(Path(tmp_dir) / 'rotated_input.mp4')
-            if prerotate_video(in_path, rotated_path, v_rotate):
-                in_path = rotated_path
-                # Após rotação, dimensões são trocadas para 90/270
-                if v_rotate in (90, 270):
-                    vw, vh = vh, vw
+        # FFmpeg moderno AUTO-ROTACIONA inputs com Display Matrix.
+        # O frame que entra no filter_complex já vem na orientação correta.
+        # Só precisamos usar as dimensões efetivas (pós-rotação) nos cálculos.
+        if v_rotate in (90, 270):
+            vw, vh = vh, vw
 
         # ── Output dimensions ────────────────────────────────────────
         if out_format == '9:16':
