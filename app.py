@@ -15,7 +15,7 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
 import os
 BASE_DIR   = Path(__file__).parent
-FONT_PATH  = str(BASE_DIR / 'globo-bold.ttf')
+FONT_PATH  = str(BASE_DIR / 'exo2-extrabold.ttf')
 LOGO_PATH  = str(BASE_DIR / 'extra_logo.png')
 # Use /tmp on Railway (ephemeral, but fine for video processing)
 UPLOAD_DIR = Path('/tmp/editor_uploads')
@@ -277,8 +277,17 @@ def render():
         # [titled][logo_png] → overlay → [out]
         # Then scale to quality
 
-        # Step 1: base video filter (crop + scale to output dims if needed)
+        # Step 1: base video filter (rotação manual + crop + scale)
+        # Estratégia determinística: -display_rotation 0 no input sobrescreve
+        # a Display Matrix (nenhum autorotate em qualquer versão do FFmpeg),
+        # e aplicamos o transpose manualmente. Output sempre limpo.
         base_vf = []
+        if v_rotate == 90:
+            base_vf.append('transpose=1')
+        elif v_rotate == 180:
+            base_vf.append('hflip,vflip')
+        elif v_rotate == 270:
+            base_vf.append('transpose=2')
         if crop_str:
             base_vf.append(crop_str)
         elif vw != out_w or vh != out_h:
@@ -286,7 +295,10 @@ def render():
             base_vf.append(f'scale={out_w}:{out_h}')
 
         # Step 2: collect inputs and build filter_complex
-        inputs = ['-i', str(in_path)]
+        inputs = []
+        if v_rotate != 0:
+            inputs += ['-display_rotation', '0']
+        inputs += ['-i', str(in_path)]
         fc_parts = []
         input_idx = 1
 
@@ -382,6 +394,13 @@ def download(filename):
     if not path.exists():
         return 'Not found', 404
     return send_file(str(path), as_attachment=True, download_name=filename)
+
+
+@app.route('/font.ttf')
+def serve_font():
+    if not Path(FONT_PATH).exists():
+        return 'Not found', 404
+    return send_file(FONT_PATH, mimetype='font/ttf')
 
 
 @app.route('/logo')
@@ -1250,7 +1269,7 @@ setPill('Pronto','ready');
 // Load custom font for preview + OffscreenCanvas title rendering
 (async function loadCustomFont() {
   try {
-    const font = new FontFace('GloboBold', 'url(./globo-bold.ttf)', {weight:'800'});
+    const font = new FontFace('GloboBold', 'url(/font.ttf)', {weight:'800'});
     await font.load();
     document.fonts.add(font);
     console.log('[Font] GloboBold loaded ✓');
