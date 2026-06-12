@@ -742,14 +742,6 @@ canvas{display:block}
     <div class="fi" id="fmtI"></div>
   </div>
 
-  <div class="blk" id="cropB" style="display:none">
-    <div class="slbl">Enquadramento</div>
-    <div class="hint" style="margin-bottom:8px">Arraste o preview · scroll = zoom</div>
-    <label>Zoom</label>
-    <div class="rrow"><input type="range" id="czS" min="100" max="500" value="100"><span class="rval" id="czV">1.0×</span></div>
-    <button id="czR" style="margin-top:8px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);padding:5px 12px;font-size:11px;color:var(--muted);cursor:pointer">↺ Resetar</button>
-  </div>
-
   <div class="blk">
     <div class="slbl">Processamento</div>
     <label>Qualidade</label>
@@ -777,6 +769,16 @@ canvas{display:block}
     <canvas id="cg" width="390" height="693" style="position:absolute;inset:0;pointer-events:none;display:none"></canvas>
   </div>
 </div>
+  <div id="cropB" style="display:none;margin-top:14px;max-width:480px;background:var(--panel,#16161a);border:1px solid var(--border2,#2a2a30);border-radius:10px;padding:12px 16px">
+    <div class="slbl" style="margin-bottom:4px">Enquadramento</div>
+    <div class="hint" style="margin-bottom:8px">Arraste o preview · scroll = zoom</div>
+    <div class="rrow" style="display:flex;align-items:center;gap:10px">
+      <label style="margin:0;white-space:nowrap">Zoom</label>
+      <input type="range" id="czS" min="100" max="500" value="100" style="flex:1">
+      <span class="rval" id="czV">1.0×</span>
+    </div>
+    <button id="czR" style="margin-top:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);padding:5px 12px;font-size:11px;color:var(--muted);cursor:pointer;width:100%">↺ Resetar</button>
+  </div>
 </div>
 </main>
 
