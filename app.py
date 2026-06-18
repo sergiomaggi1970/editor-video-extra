@@ -1375,7 +1375,6 @@ document.querySelectorAll('.tmpl-btn').forEach(b=>{
   await ensureTitleFont(template);
   drawPrev();
 })();
-})();
 </script>
 </body>
 </html>
