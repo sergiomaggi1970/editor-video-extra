@@ -162,7 +162,7 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
             text_fill = (255, 255, 255, 255)
         draw.text((margin + pill_px - bb[0], cy + int((pill_h - (bb[3] - bb[1])) / 2) - bb[1]),
                   super_text, font=f_super, fill=text_fill)
-        cy += pill_h + 8
+        cy += pill_h + int(out_w * 0.02)  # gap antetítulo→título (~22px em 1080p)
 
     # Main title lines: caixa preta/texto branco (Extra) ou caixa branca/texto preto (Globo)
     for i, line in enumerate(lines):
@@ -1184,7 +1184,7 @@ function drawTitles(ctx,cw,ch){
     ctx.fillRect(mgX,cy,sw+pPx*2,pH);
     ctx.fillStyle = isGlobo ? '#000' : '#fff';
     ctx.textBaseline='alphabetic';
-    ctx.fillText(sTxt,mgX+pPx,cy+Math.round(pH*.72));cy+=pH+8;
+    ctx.fillText(sTxt,mgX+pPx,cy+Math.round(pH*.72));cy+=pH+Math.round(cw*0.02);
   }
   ctx.font=`${mainW} ${mSz}px ${mainFam}`;
   for(let i=0;i<lines.length;i++){
