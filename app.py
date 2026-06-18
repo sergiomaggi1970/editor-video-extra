@@ -395,7 +395,8 @@ def render():
         shutil.copy(str(out_path), str(final_path))
 
         # Debug: log do comando usado
-        cmd_debug = ' '.join(str(a) for a in cmd_args)
+        import os as _os
+        cmd_debug = f'[template={template} corsario={_os.path.exists(GLOBO_MAIN_FONT)} opensans={_os.path.exists(GLOBO_SUPER_FONT)}] ' + ' '.join(str(a) for a in cmd_args)
 
         # Clean up old output files (keep last 20)
         try:
