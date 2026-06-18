@@ -114,7 +114,9 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
     try:
         f_main  = ImageFont.truetype(main_font_path, main_sz)
         f_super = ImageFont.truetype(super_font_path, super_sz)
-    except Exception:
+    except Exception as e:
+        import sys
+        print(f'[FONT ERROR] template={template} main={main_font_path} super={super_font_path} err={e}', file=sys.stderr)
         f_main  = ImageFont.load_default()
         f_super = ImageFont.load_default()
 
@@ -893,6 +895,11 @@ async function selectTemplate(id){
     if(lbl) lbl.style.color = on ? (id==='globo'?'#5b8fe0':'#e8556a') : 'var(--muted)';
   });
   document.getElementById('suprLbl').textContent = TEMPLATE_LABELS[id].supr;
+  // Atualizar header
+  const hname = document.querySelector('.hname');
+  if(hname) hname.textContent = id==='globo' ? 'O Globo' : 'Extra';
+  const hdot = document.querySelector('.hdot');
+  if(hdot) hdot.style.background = id==='globo' ? '#2c5fb8' : '#e8002d';
   // Recarrega logo padrão do template (só se a logo atual ainda for a padrão)
   if(lgIsDefault){
     await loadDefaultLogo();
@@ -1380,6 +1387,27 @@ setPill('Pronto','ready');
 document.querySelectorAll('.tmpl-btn').forEach(b=>{
   b.addEventListener('click', ()=>selectTemplate(b.dataset.tmpl));
 });
+
+// Aplicar estado visual do template inicial sem reload de logo/fonte
+(function applyInitialTemplate(){
+  const id = template;
+  document.querySelectorAll('.tmpl-btn').forEach(b=>{
+    const on = b.dataset.tmpl===id;
+    b.classList.toggle('on', on);
+    b.style.border = on ? (id==='globo'?'2px solid #2c5fb8':'2px solid #c0152a') : '2px solid var(--border2)';
+    b.style.background = on ? (id==='globo'?'#15233d':'#241417') : 'transparent';
+    const bar = b.querySelector('div:last-child');
+    if(bar) bar.style.background = on ? (id==='globo'?'#2c5fb8':'#c0152a') : 'var(--border2)';
+    const lbl = b.querySelector('div:first-child');
+    if(lbl) lbl.style.color = on ? (id==='globo'?'#5b8fe0':'#e8556a') : 'var(--muted)';
+  });
+  document.getElementById('suprLbl').textContent = TEMPLATE_LABELS[id].supr;
+  // Atualizar header
+  const hname = document.querySelector('.hname');
+  if(hname) hname.textContent = id==='globo' ? 'O Globo' : 'Extra';
+  const hdot = document.querySelector('.hdot');
+  if(hdot) hdot.style.background = id==='globo' ? '#2c5fb8' : '#e8002d';
+})();
 
 // Carregar logo padrão e fonte do template inicial
 (async function(){
