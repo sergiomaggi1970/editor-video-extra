@@ -413,6 +413,17 @@ def render():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+@app.route('/healthz')
+def healthz():
+    import os
+    files = ['exo2-extrabold.ttf','extra_logo.png','oglobo_logo.png','opensans-regular.ttf','corsario-vf.otf']
+    result = {}
+    for f in files:
+        p = BASE_DIR / f
+        result[f] = {'exists': p.exists(), 'size': os.path.getsize(str(p)) if p.exists() else 0}
+    return jsonify(result)
+
+
 @app.route('/download/<filename>')
 def download(filename):
     path = OUTPUT_DIR / filename
