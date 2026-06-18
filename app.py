@@ -15,8 +15,11 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
 import os
 BASE_DIR   = Path(__file__).parent
-FONT_PATH  = str(BASE_DIR / 'exo2-extrabold.ttf')
-LOGO_PATH  = str(BASE_DIR / 'extra_logo.png')
+FONT_PATH        = str(BASE_DIR / 'exo2-extrabold.ttf')          # Extra
+LOGO_PATH        = str(BASE_DIR / 'extra_logo.png')               # Extra
+GLOBO_LOGO_PATH  = str(BASE_DIR / 'oglobo_logo.png')
+GLOBO_SUPER_FONT = str(BASE_DIR / 'opensans-regular.ttf')
+GLOBO_MAIN_FONT  = str(BASE_DIR / 'corsario-vf.otf')
 # Use /tmp on Railway (ephemeral, but fine for video processing)
 UPLOAD_DIR = Path('/tmp/editor_uploads')
 OUTPUT_DIR = Path('/tmp/editor_outputs')
@@ -86,22 +89,31 @@ def esc_ff(text):
 
 # ── Pillow title overlay (works on all FFmpeg builds) ─────────────────────────
 
-def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, offset_x=0.0, offset_y=0.0):
-    """Render title overlay as transparent RGBA PNG using Pillow."""
+def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, offset_x=0.0, offset_y=0.0, template='extra'):
+    """Render title overlay as transparent RGBA PNG using Pillow.
+
+    template='extra' → caixa preta/texto branco, pílula vermelha (Exo2 ExtraBold)
+    template='globo' → caixa branca/texto preto (Corsario VF título, Open Sans antetítulo)
+    """
     img  = Image.new('RGBA', (out_w, out_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
+    is_globo = (template == 'globo')
+
     margin   = int(out_w * 0.028)
     main_sz  = int(out_w * font_pct)
-    super_sz = int(main_sz * 0.593)
+    super_sz = int(main_sz * (0.5 if is_globo else 0.593))
     pill_px  = int(out_w * 0.018)
     box_px   = int(out_w * 0.018)
-    line_h   = int(main_sz * 1.19)
-    pill_h   = int(super_sz * 1.55)
+    line_h   = int(main_sz * (1.15 if is_globo else 1.19))
+    pill_h   = int(super_sz * (1.9 if is_globo else 1.55))
+
+    main_font_path  = GLOBO_MAIN_FONT  if is_globo else FONT_PATH
+    super_font_path = GLOBO_SUPER_FONT if is_globo else FONT_PATH
 
     try:
-        f_main  = ImageFont.truetype(FONT_PATH, main_sz)
-        f_super = ImageFont.truetype(FONT_PATH, super_sz)
+        f_main  = ImageFont.truetype(main_font_path, main_sz)
+        f_super = ImageFont.truetype(super_font_path, super_sz)
     except Exception:
         f_main  = ImageFont.load_default()
         f_super = ImageFont.load_default()
@@ -133,26 +145,38 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
     cy     += int(out_h * offset_y)
     margin += int(out_w * offset_x)
 
-    # Supertitle pill
+    super_text = supertitle.upper() if (supertitle and is_globo) else (supertitle.upper() if supertitle else '')
+
+    # Supertitle: pílula vermelha (Extra) ou caixa branca (Globo)
     if supertitle:
-        bb = draw.textbbox((0, 0), supertitle.upper(), font=f_super)
+        bb = draw.textbbox((0, 0), super_text, font=f_super)
         sw = bb[2] - bb[0]
-        draw.rectangle([margin, cy, margin + sw + pill_px * 2, cy + pill_h],
-                       fill=(232, 0, 45, 255))
+        box_w = sw + pill_px * 2
+        if is_globo:
+            draw.rectangle([margin, cy, margin + box_w, cy + pill_h], fill=(255, 255, 255, 255))
+            text_fill = (0, 0, 0, 255)
+        else:
+            draw.rectangle([margin, cy, margin + box_w, cy + pill_h], fill=(232, 0, 45, 255))
+            text_fill = (255, 255, 255, 255)
         draw.text((margin + pill_px - bb[0], cy + int((pill_h - (bb[3] - bb[1])) / 2) - bb[1]),
-                  supertitle.upper(), font=f_super, fill=(255, 255, 255, 255))
+                  super_text, font=f_super, fill=text_fill)
         cy += pill_h + 8
 
-    # Main title lines
+    # Main title lines: caixa preta/texto branco (Extra) ou caixa branca/texto preto (Globo)
     for i, line in enumerate(lines):
         ly = cy + i * line_h
         bb = draw.textbbox((0, 0), line, font=f_main)
         tw = bb[2] - bb[0]
         bw = tw + box_px * 2
-        draw.rectangle([margin, ly, margin + bw, ly + line_h],
-                       fill=(0, 0, 0, int(255 * 0.9)))
+        if is_globo:
+            box_fill  = (255, 255, 255, 255)
+            text_fill = (0, 0, 0, 255)
+        else:
+            box_fill  = (0, 0, 0, int(255 * 0.9))
+            text_fill = (255, 255, 255, 255)
+        draw.rectangle([margin, ly, margin + bw, ly + line_h], fill=box_fill)
         draw.text((margin + box_px - bb[0], ly + int((line_h - (bb[3] - bb[1])) / 2) - bb[1]),
-                  line, font=f_main, fill=(255, 255, 255, 255))
+                  line, font=f_main, fill=text_fill)
 
     return img
 
@@ -172,6 +196,7 @@ def render():
         font_pct    = float(request.form.get('font_pct', 5.9)) / 100
         title_offset_x = float(request.form.get('title_offset_x', 0)) / 100
         title_offset_y = float(request.form.get('title_offset_y', 0)) / 100
+        template    = request.form.get('template', 'extra')      # extra / globo
         out_format  = request.form.get('out_format', '9:16')    # 9:16 / 16:9
         quality     = request.form.get('quality', '720p')
         wm_mode     = request.form.get('wm_mode', 'image')      # image / text / none
@@ -195,7 +220,7 @@ def render():
         video_file.save(str(in_path))
 
         use_custom_logo = False
-        logo_path = LOGO_PATH
+        logo_path = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
         if logo_file and logo_file.filename:
             logo_path = str(Path(tmp_dir) / 'logo.png')
             logo_file.save(logo_path)
@@ -263,7 +288,7 @@ def render():
         title_filters = []
         title_overlay_path = None
         if supertitle or maintitle:
-            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y)
+            overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y, template)
             title_overlay_path = str(Path(tmp_dir) / 'title_overlay.png')
             overlay_img.save(title_overlay_path)
 
@@ -398,17 +423,30 @@ def download(filename):
 
 @app.route('/font.ttf')
 def serve_font():
-    if not Path(FONT_PATH).exists():
+    tpl = request.args.get('template', 'extra')
+    path = GLOBO_MAIN_FONT if tpl == 'globo' else FONT_PATH
+    if not Path(path).exists():
         return 'Not found', 404
-    return send_file(FONT_PATH, mimetype='font/ttf')
+    return send_file(path, mimetype='font/ttf')
+
+
+@app.route('/font_super.ttf')
+def serve_font_super():
+    tpl = request.args.get('template', 'extra')
+    path = GLOBO_SUPER_FONT if tpl == 'globo' else FONT_PATH
+    if not Path(path).exists():
+        return 'Not found', 404
+    return send_file(path, mimetype='font/ttf')
 
 
 @app.route('/logo')
 def serve_logo():
-    """Serve the default logo for canvas preview."""
-    if not Path(LOGO_PATH).exists():
+    """Serve the default logo for canvas preview, based on template."""
+    tpl = request.args.get('template', 'extra')
+    path = GLOBO_LOGO_PATH if tpl == 'globo' else LOGO_PATH
+    if not Path(path).exists():
         return 'Not found', 404
-    return send_file(LOGO_PATH, mimetype='image/png')
+    return send_file(path, mimetype='image/png')
 
 
 @app.route('/debug_title')
@@ -673,6 +711,20 @@ canvas{display:block}
 <div class="sb">
 
   <div class="blk">
+    <div class="slbl">Template</div>
+    <div class="tmpl-sel" style="display:flex;gap:8px">
+      <button type="button" class="tmpl-btn on" id="tmplGlobo" data-tmpl="globo" style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid #2c5fb8;background:#15233d;cursor:pointer;text-align:center">
+        <div style="font-size:11px;font-weight:700;color:#5b8fe0;letter-spacing:.04em;margin-bottom:4px">O GLOBO</div>
+        <div style="height:3px;background:#2c5fb8;border-radius:2px"></div>
+      </button>
+      <button type="button" class="tmpl-btn" id="tmplExtra" data-tmpl="extra" style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid var(--border2);background:transparent;cursor:pointer;text-align:center">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;margin-bottom:4px">EXTRA</div>
+        <div style="height:3px;background:var(--border2);border-radius:2px"></div>
+      </button>
+    </div>
+  </div>
+
+  <div class="blk">
     <div class="slbl">Vídeo</div>
     <div class="dz" id="dz">
       <input type="file" id="vi" accept="video/*">
@@ -684,7 +736,7 @@ canvas{display:block}
 
   <div class="blk">
     <div class="slbl">Títulos</div>
-    <label>Antetítulo · pílula vermelha</label>
+    <label id="suprLbl">Antetítulo</label>
     <input type="text" id="supr" placeholder="EX: EXCLUSIVO" maxlength="60">
     <label>Título principal · caixa preta</label>
     <textarea id="titl" placeholder="Digite o título da matéria" rows="3"></textarea>
@@ -802,11 +854,57 @@ let ready=true, ff=null;
 let vFile=null, lgURL=null, lgIsDefault=false;
 let vW=0, vH=0;
 let fmt='9:16', wmMode='image', wmPos='topleft';
+let template='globo';
 let cX=0,cY=0,cZ=1;
 let cDrag=false,cSX=0,cSY=0,cOX=0,cOY=0;
 let lastVURL=null;
 let lgImg=null, lgImgSrc=null;
+let titleFontLoaded={extra:false, globo:false};
 const hv=document.getElementById('hv');
+
+const TEMPLATE_LABELS = {
+  extra: {logo:'Logo EXTRA · clique para trocar', supr:'Antetítulo · pílula vermelha'},
+  globo: {logo:'Logo O GLOBO · clique para trocar', supr:'Antetítulo · caixa branca'}
+};
+
+async function selectTemplate(id){
+  if(template===id)return;
+  template=id;
+  document.querySelectorAll('.tmpl-btn').forEach(b=>{
+    const on = b.dataset.tmpl===id;
+    b.classList.toggle('on', on);
+    b.style.border = on ? (id==='globo'?'2px solid #2c5fb8':'2px solid #c0152a') : '2px solid var(--border2)';
+    b.style.background = on ? (id==='globo'?'#15233d':'#241417') : 'transparent';
+    const bar = b.querySelector('div:last-child');
+    if(bar) bar.style.background = on ? (id==='globo'?'#2c5fb8':'#c0152a') : 'var(--border2)';
+    const lbl = b.querySelector('div:first-child');
+    if(lbl) lbl.style.color = on ? (id==='globo'?'#5b8fe0':'#e8556a') : 'var(--muted)';
+  });
+  document.getElementById('suprLbl').textContent = TEMPLATE_LABELS[id].supr;
+  // Recarrega logo padrão do template (só se a logo atual ainda for a padrão)
+  if(lgIsDefault){
+    await loadDefaultLogo();
+  }
+  await ensureTitleFont(id);
+  drawPrev();
+}
+
+async function ensureTitleFont(id){
+  if(titleFontLoaded[id])return;
+  try{
+    const fam = id==='globo' ? 'GloboMain' : 'GloboBold';
+    const weight = id==='globo' ? '500' : '800';
+    const font = new FontFace(fam, `url(/font.ttf?template=${id})`, {weight});
+    await font.load();
+    document.fonts.add(font);
+    if(id==='globo'){
+      const fontSuper = new FontFace('GloboSuper', `url(/font_super.ttf?template=globo)`, {weight:'400'});
+      await fontSuper.load();
+      document.fonts.add(fontSuper);
+    }
+    titleFontLoaded[id]=true;
+  }catch(e){console.warn('[Font] erro ao carregar fonte do template', id, e.message);}
+}
 
 // ── FFmpeg init ───────────────────────────────────────────────────────────────
 async function initFF() {
@@ -835,12 +933,12 @@ function setPill(t,c){const p=document.getElementById('pill');p.textContent=t;p.
 // ── Default logo ──────────────────────────────────────────────────────────────
 async function loadDefaultLogo(){
   try{
-    const r=await fetch('./extra_logo.png');
+    const r=await fetch('/logo?template='+template);
     if(!r.ok)return;
     const b=await r.blob();
+    if(lgURL && lgIsDefault) URL.revokeObjectURL(lgURL);
     lgURL=URL.createObjectURL(b); lgIsDefault=true;
-    setLogoPreview(lgURL,'Logo EXTRA · clique para trocar');
-    drawPrev();
+    setLogoPreview(lgURL, TEMPLATE_LABELS[template].logo);
   }catch(e){console.log('no default logo')}
 }
 function setLogoPreview(url,lbl){
@@ -1028,14 +1126,19 @@ function drawTitles(ctx,cw,ch){
   const sT=document.getElementById('supr').value.trim();
   const mT=document.getElementById('titl').value.trim();
   if(!sT&&!mT)return;
+  const isGlobo = template==='globo';
   const fp=parseFloat(document.getElementById('fsz').value)/100;
   const pos=document.getElementById('tpos').value;
-  const mg=Math.round(o.w*.028*scale),mSz=Math.round(o.w*fp*scale),sSz=Math.round(mSz*.593);
+  const mg=Math.round(o.w*.028*scale),mSz=Math.round(o.w*fp*scale),sSz=Math.round(mSz*(isGlobo?.5:.593));
   const pPx=Math.round(o.w*.018*scale),bPx=Math.round(o.w*.018*scale);
-  const lH=Math.round(mSz*1.19),pH=Math.round(sSz*1.55);
+  const lH=Math.round(mSz*(isGlobo?1.15:1.19)),pH=Math.round(sSz*(isGlobo?1.9:1.55));
+  const mainFam = isGlobo ? "GloboMain,Georgia,'Times New Roman',serif" : "GloboBold,'Helvetica Neue',Arial,sans-serif";
+  const mainW   = isGlobo ? '500' : '800';
+  const superFam = isGlobo ? "GloboSuper,Arial,sans-serif" : "GloboBold,'Helvetica Neue',Arial,sans-serif";
+  const superW   = isGlobo ? '400' : '800';
   const lines=[];
   if(mT){
-    ctx.font=`800 ${mSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
+    ctx.font=`${mainW} ${mSz}px ${mainFam}`;
     const mxW=cw-mg*2-bPx*2;
     for(const para of mT.split('\n')){
       let cur='';
@@ -1055,17 +1158,22 @@ function drawTitles(ctx,cw,ch){
   cy += Math.round(ch*tOffY);
   const mgX = mg + Math.round(cw*tOffX);
   if(sT){
-    ctx.font=`800 ${sSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
-    const sw=ctx.measureText(sT.toUpperCase()).width;
-    ctx.fillStyle='#E8002D';ctx.fillRect(mgX,cy,sw+pPx*2,pH);
-    ctx.fillStyle='#fff';ctx.textBaseline='alphabetic';
-    ctx.fillText(sT.toUpperCase(),mgX+pPx,cy+Math.round(pH*.72));cy+=pH+8;
+    ctx.font=`${superW} ${sSz}px ${superFam}`;
+    const sTxt = sT.toUpperCase();
+    const sw=ctx.measureText(sTxt).width;
+    ctx.fillStyle = isGlobo ? '#fff' : '#E8002D';
+    ctx.fillRect(mgX,cy,sw+pPx*2,pH);
+    ctx.fillStyle = isGlobo ? '#000' : '#fff';
+    ctx.textBaseline='alphabetic';
+    ctx.fillText(sTxt,mgX+pPx,cy+Math.round(pH*.72));cy+=pH+8;
   }
-  ctx.font=`800 ${mSz}px GloboBold,'Helvetica Neue',Arial,sans-serif`;
+  ctx.font=`${mainW} ${mSz}px ${mainFam}`;
   for(let i=0;i<lines.length;i++){
     const ly=cy+i*lH,bw=ctx.measureText(lines[i]).width+bPx*2;
-    ctx.fillStyle='rgba(0,0,0,.9)';ctx.fillRect(mgX,ly,bw,lH);
-    ctx.fillStyle='#fff';ctx.textBaseline='alphabetic';
+    ctx.fillStyle = isGlobo ? '#fff' : 'rgba(0,0,0,.9)';
+    ctx.fillRect(mgX,ly,bw,lH);
+    ctx.fillStyle = isGlobo ? '#000' : '#fff';
+    ctx.textBaseline='alphabetic';
     ctx.fillText(lines[i],mgX+bPx,ly+Math.round(lH*.77));
   }
 }
@@ -1173,6 +1281,7 @@ async function renderVideo(){
     const r=cropRect();
     fd.append('supertitle', document.getElementById('supr').value.trim());
     fd.append('maintitle',  document.getElementById('titl').value.trim());
+    fd.append('template',   template);
     fd.append('title_dur',  document.getElementById('tdur').value||'6');
     fd.append('title_pos',  document.getElementById('tpos').value);
     fd.append('font_pct',   document.getElementById('fsz').value);
@@ -1256,29 +1365,16 @@ createZoomButtons();
 document.getElementById('overlay').classList.add('gone');
 setPill('Pronto','ready');
 
-// Carregar logo padrão do servidor
+document.querySelectorAll('.tmpl-btn').forEach(b=>{
+  b.addEventListener('click', ()=>selectTemplate(b.dataset.tmpl));
+});
+
+// Carregar logo padrão e fonte do template inicial
 (async function(){
-  try{
-    const r=await fetch('/logo');
-    if(!r.ok)return;
-    const b=await r.blob();
-    lgURL=URL.createObjectURL(b);
-    setLogoPreview(lgURL,'Logo EXTRA · clique para trocar');
-  }catch(e){}
+  await loadDefaultLogo();
+  await ensureTitleFont(template);
+  drawPrev();
 })();
-
-
-// Load custom font for preview + OffscreenCanvas title rendering
-(async function loadCustomFont() {
-  try {
-    const font = new FontFace('GloboBold', 'url(/font.ttf)', {weight:'800'});
-    await font.load();
-    document.fonts.add(font);
-    console.log('[Font] GloboBold loaded ✓');
-    drawPrev(); // redraw preview with correct font
-  } catch(e) {
-    console.warn('[Font] Could not load GloboBold:', e.message);
-  }
 })();
 </script>
 </body>
