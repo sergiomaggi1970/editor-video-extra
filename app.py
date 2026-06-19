@@ -9,11 +9,19 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template_string
 from functools import wraps
+from dotenv import load_dotenv
+import psycopg2
+
+load_dotenv()
+
+
+def get_db_connection():
+    return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
-import os
 BASE_DIR   = Path(__file__).parent
 FONT_PATH        = str(BASE_DIR / 'exo2-extrabold.ttf')          # Extra
 LOGO_PATH        = str(BASE_DIR / 'extra_logo.png')               # Extra
@@ -80,6 +88,73 @@ def prerotate_video(in_path, out_path, rotation):
            str(out_path)]
     r = subprocess.run(cmd, capture_output=True)
     return r.returncode == 0
+
+
+# Dimensões alvo por formato
+_CLIP_FORMATS = {
+    'vertical':   (1080, 1920),
+    'square':     (1080, 1080),
+    'horizontal': (1920, 1080),
+}
+
+def normalize_clip_for_timeline(input_path, output_path, output_format):
+    """
+    Normaliza um clipe para uso em timeline:
+    - crop/scale para o formato escolhido (vertical/square/horizontal)
+    - 30 fps, h264/aac, 1 faixa de áudio sempre presente
+    Lança RuntimeError se o ffmpeg falhar ou exceder 120 s.
+    """
+    tw, th = _CLIP_FORMATS.get(output_format, (1080, 1920))
+
+    # Detecta se há faixa de áudio no arquivo de entrada
+    probe_cmd = [
+        'ffprobe', '-v', 'quiet', '-print_format', 'json',
+        '-show_streams', str(input_path),
+    ]
+    probe = subprocess.run(probe_cmd, capture_output=True, text=True)
+    probe_data = json.loads(probe.stdout) if probe.returncode == 0 else {}
+    has_audio = any(
+        s.get('codec_type') == 'audio'
+        for s in probe_data.get('streams', [])
+    )
+
+    # Filter graph: crop para a proporção alvo, depois escala
+    vf = (
+        f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
+        f"crop={tw}:{th},"
+        f"fps=30"
+    )
+
+    cmd = ['ffmpeg', '-y', '-i', str(input_path)]
+
+    if has_audio:
+        cmd += [
+            '-vf', vf,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+            '-map', '0:v:0', '-map', '0:a:0',
+            str(output_path),
+        ]
+    else:
+        # Gera faixa de silêncio com anullsrc
+        cmd += [
+            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+            '-vf', vf,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+            '-map', '0:v:0', '-map', '1:a:0',
+            '-shortest',
+            str(output_path),
+        ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise TimeoutError('ffmpeg normalization exceeded 120s')
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg error:\n{result.stderr[-2000:]}")
+
 
 
 def esc_ff(text):
@@ -480,6 +555,177 @@ def stream_video(filename):
     if not path.exists():
         return 'Not found', 404
     return send_file(str(path), mimetype='video/mp4', as_attachment=False)
+
+
+# ── Timeline API ─────────────────────────────────────────────────────────────
+
+@app.route('/api/timeline/clip', methods=['POST'])
+def timeline_add_clip():
+    """
+    Recebe multipart/form-data:
+      - video        : arquivo de vídeo
+      - timeline_id  : uuid (opcional; gera novo se ausente)
+      - output_format: vertical | square | horizontal  (default: vertical)
+    """
+    if 'video' not in request.files:
+        return jsonify({'error': 'video file required'}), 400
+
+    file = request.files['video']
+    timeline_id = request.form.get('timeline_id') or str(uuid.uuid4())
+    output_format = request.form.get('output_format', 'vertical')
+
+    if output_format not in _CLIP_FORMATS:
+        return jsonify({'error': f'output_format must be one of {list(_CLIP_FORMATS)}'}), 400
+
+    # Diretório de destino para essa timeline
+    timeline_dir = Path(f'/tmp/timeline_{timeline_id}')
+    timeline_dir.mkdir(parents=True, exist_ok=True)
+
+    # Salva upload temporariamente
+    original_filename = file.filename or 'upload.mp4'
+    tmp_input = timeline_dir / f'input_{uuid.uuid4().hex[:8]}_{original_filename}'
+    file.save(str(tmp_input))
+
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Próxima position (1-based)
+        cur.execute(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM timeline_clips WHERE timeline_id = %s",
+            (timeline_id,)
+        )
+        position = cur.fetchone()[0]
+
+        output_path = timeline_dir / f'clip_{position}.mp4'
+
+        try:
+            normalize_clip_for_timeline(tmp_input, output_path, output_format)
+        except TimeoutError:
+            return jsonify({'error': 'video normalization timed out (120s limit)'}), 504
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 500
+
+        cur.execute(
+            """
+            INSERT INTO timeline_clips
+                (timeline_id, position, original_filename, local_path, status, output_format)
+            VALUES (%s, %s, %s, %s, 'uploaded', %s)
+            RETURNING id
+            """,
+            (timeline_id, position, original_filename, str(output_path), output_format)
+        )
+        clip_id = cur.fetchone()[0]
+        conn.commit()
+
+        return jsonify({'timeline_id': timeline_id, 'clip_id': clip_id, 'position': position})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+        tmp_input.unlink(missing_ok=True)
+
+
+@app.route('/api/timeline/<timeline_id>', methods=['GET'])
+def timeline_list(timeline_id):
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, timeline_id, position, original_filename,
+                   local_path, status, output_format, created_at
+            FROM timeline_clips
+            WHERE timeline_id = %s
+            ORDER BY position
+            """,
+            (timeline_id,)
+        )
+        cols = [d.name for d in cur.description]
+        clips = [dict(zip(cols, row)) for row in cur.fetchall()]
+        for c in clips:
+            if c.get('created_at'):
+                c['created_at'] = c['created_at'].isoformat()
+        return jsonify(clips)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route('/api/timeline/<timeline_id>/clip/<int:clip_id>', methods=['DELETE'])
+def timeline_delete_clip(timeline_id, clip_id):
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT local_path FROM timeline_clips WHERE id = %s AND timeline_id = %s",
+            (clip_id, timeline_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'clip not found'}), 404
+
+        local_path = row[0]
+        cur.execute(
+            "DELETE FROM timeline_clips WHERE id = %s AND timeline_id = %s",
+            (clip_id, timeline_id)
+        )
+        conn.commit()
+
+        if local_path:
+            Path(local_path).unlink(missing_ok=True)
+
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route('/api/timeline/<timeline_id>/reorder', methods=['PATCH'])
+def timeline_reorder(timeline_id):
+    """Body: {"clip_ids": [3, 1, 2]} — nova ordem dos clipes."""
+    data = request.get_json(silent=True) or {}
+    clip_ids = data.get('clip_ids')
+    if not isinstance(clip_ids, list) or not clip_ids:
+        return jsonify({'error': 'clip_ids must be a non-empty list'}), 400
+
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        for position, clip_id in enumerate(clip_ids):
+            cur.execute(
+                """
+                UPDATE timeline_clips
+                SET position = %s
+                WHERE id = %s AND timeline_id = %s
+                """,
+                (position, clip_id, timeline_id)
+            )
+        conn.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # In-memory job store for extension to pick up

@@ -1,5 +1,35 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment / credentials
 .env
+.env.*
+*.json.secret
+service_account*.json
+credentials*.json
+*.boto
+gcloud_credentials*
+
+# FFmpeg / video temporários
+*.ts
+*.part
+*.tmp
 /tmp/
+
+# macOS
+.DS_Store
+
+# Uploads e outputs gerados em runtime (Railway usa /tmp, mas por segurança)
+editor_uploads/
+editor_outputs/
