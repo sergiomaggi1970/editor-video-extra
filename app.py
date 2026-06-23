@@ -1008,6 +1008,34 @@ def timeline_finalize_status(timeline_id, job_id):
         if conn: conn.close()
 
 
+@app.route('/api/timeline/<timeline_id>/finalize/<job_id>/download')
+def timeline_finalize_download(timeline_id, job_id):
+    """Serve the final rendered video for a completed finalize job."""
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            "SELECT status, output_path FROM render_jobs WHERE id = %s AND timeline_id = %s",
+            (job_id, timeline_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'job not found'}), 404
+        status, output_path = row
+        if status != 'done' or not output_path:
+            return jsonify({'error': 'render not complete'}), 409
+        p = Path(output_path)
+        if not p.exists():
+            return jsonify({'error': 'file not found on disk'}), 404
+        return send_file(str(p), as_attachment=True, download_name=p.name)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:  cur.close()
+        if conn: conn.close()
+
+
 # In-memory job store for extension to pick up
 _ef_jobs = {}
 
@@ -1239,6 +1267,15 @@ canvas{display:block}
 .tl-empty{font-size:11px;color:var(--muted);text-align:center;padding:14px 0;border:1px dashed var(--border2);border-radius:var(--radius)}
 .btn-add{width:100%;padding:7px;background:transparent;border:1px dashed var(--border2);border-radius:var(--radius);color:var(--muted);font-size:12px;font-family:var(--font);cursor:pointer;transition:all .15s;text-align:center}
 .btn-add:hover{border-color:var(--red);color:var(--red)}
+.tl-item{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 8px;font-size:11px}
+.tl-item .tl-pos{color:var(--muted);min-width:18px;font-variant-numeric:tabular-nums}
+.tl-item .tl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-item .tl-rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;flex-shrink:0}
+.tl-item .tl-rm:hover{color:var(--red)}
+.tl-item.pending{border-style:dashed;opacity:.7}
+#btnConfirm{display:none;width:100%;padding:8px;margin-top:6px;background:rgba(232,0,45,.1);border:1px solid rgba(232,0,45,.3);border-radius:var(--radius);color:var(--red);font-size:12px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .15s}
+#btnConfirm:hover{background:rgba(232,0,45,.18)}
+#tlStatus{font-size:11px;color:var(--muted);margin-top:6px;min-height:16px;text-align:center}
 </style>
 </head>
 <body>
@@ -1297,10 +1334,11 @@ canvas{display:block}
         <div class="dz-main">Arraste ou clique para adicionar clipes</div>
         <div class="dz-sub">Múltiplos arquivos · MP4 · MOV · WebM</div>
       </div>
-      <div id="tlList" class="tl-list" style="margin-top:8px">
-        <div class="tl-empty" id="tlEmpty">Nenhum clipe adicionado ainda</div>
-      </div>
+      <div id="tlEmpty" class="tl-empty" style="margin-top:8px">Nenhum clipe adicionado ainda</div>
+      <div id="tlList" class="tl-list" style="margin-top:8px"></div>
       <button class="btn-add" id="btnAddClip" onclick="document.getElementById('viTl').click()">+ Adicionar vídeo</button>
+      <button id="btnConfirm">Confirmar e enviar (0)</button>
+      <div id="tlStatus"></div>
     </div>
   </div>
 
@@ -1427,6 +1465,199 @@ let fmt='9:16', wmMode='image', wmPos='topleft';
 let template='globo';
 let videoMode='single'; // 'single' | 'timeline'
 
+// ── Timeline state ────────────────────────────────────────────────────────────
+let tlTimelineId = null;
+let tlClips      = [];   // [{id, position, original_filename}]
+let tlPending    = [];   // [File, ...]
+
+// ── syncBtnR ──────────────────────────────────────────────────────────────────
+function syncBtnR() {
+  const btn = document.getElementById('btnR');
+  if (videoMode === 'timeline') {
+    btn.textContent = '⚙ Finalizar Timeline';
+    btn.disabled = tlClips.length === 0;
+  } else {
+    btn.textContent = '⚙ Processar Vídeo';
+    btn.disabled = !vFile;
+  }
+}
+
+// ── Render timeline list ──────────────────────────────────────────────────────
+function renderTlList() {
+  const list  = document.getElementById('tlList');
+  const empty = document.getElementById('tlEmpty');
+  const btnC  = document.getElementById('btnConfirm');
+  list.innerHTML = '';
+
+  tlPending.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'tl-item pending';
+    row.innerHTML = `<span class="tl-pos">${tlClips.length + i + 1}</span>
+      <span class="tl-name" title="${f.name}">${f.name}</span>
+      <button class="tl-rm" data-pi="${i}" title="Remover">×</button>`;
+    list.appendChild(row);
+  });
+
+  tlClips.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'tl-item';
+    row.innerHTML = `<span class="tl-pos">${c.position}</span>
+      <span class="tl-name" title="${c.original_filename}">${c.original_filename}</span>
+      <button class="tl-rm" data-id="${c.id}" title="Remover">×</button>`;
+    list.appendChild(row);
+  });
+
+  empty.style.display = (tlPending.length + tlClips.length) === 0 ? '' : 'none';
+  btnC.style.display  = tlPending.length > 0 ? 'block' : 'none';
+  btnC.textContent    = `Confirmar e enviar (${tlPending.length})`;
+  syncBtnR();
+}
+
+function setTlStatus(msg) {
+  document.getElementById('tlStatus').textContent = msg;
+}
+
+// ── Remove item da lista ──────────────────────────────────────────────────────
+document.getElementById('tlList').addEventListener('click', async e => {
+  const btn = e.target.closest('.tl-rm');
+  if (!btn) return;
+
+  if (btn.dataset.pi !== undefined) {
+    tlPending.splice(Number(btn.dataset.pi), 1);
+    renderTlList();
+    return;
+  }
+
+  if (btn.dataset.id && tlTimelineId) {
+    btn.disabled = true;
+    try {
+      const r = await fetch(`/api/timeline/${tlTimelineId}/clip/${btn.dataset.id}`, {method:'DELETE'});
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      tlClips = tlClips.filter(c => String(c.id) !== btn.dataset.id);
+      tlClips.forEach((c, i) => c.position = i + 1);
+    } catch(err) {
+      setTlStatus('❌ ' + err.message);
+      btn.disabled = false;
+    }
+    renderTlList();
+  }
+});
+
+// ── File input → tlPending ────────────────────────────────────────────────────
+document.getElementById('viTl').addEventListener('change', function() {
+  [...this.files].forEach(f => tlPending.push(f));
+  this.value = '';
+  renderTlList();
+});
+
+// ── Confirmar e enviar ────────────────────────────────────────────────────────
+document.getElementById('btnConfirm').addEventListener('click', async () => {
+  if (tlPending.length === 0) return;
+  const btnC = document.getElementById('btnConfirm');
+  btnC.disabled = true;
+
+  const outFmt = (() => {
+    const f = (document.querySelector('#fmtT .tb.on') || {}).dataset?.f || '9:16';
+    return f === '16:9' ? 'horizontal' : 'vertical';
+  })();
+
+  const total  = tlPending.length;
+  const toSend = [...tlPending];
+  tlPending    = [];
+
+  for (let i = 0; i < toSend.length; i++) {
+    const file = toSend[i];
+    setTlStatus(`Enviando ${i + 1}/${total}: ${file.name}…`);
+    renderTlList();
+
+    const fd = new FormData();
+    fd.append('video', file);
+    fd.append('output_format', outFmt);
+    if (tlTimelineId) fd.append('timeline_id', tlTimelineId);
+
+    try {
+      const r    = await fetch('/api/timeline/clip', {method:'POST', body:fd});
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || r.statusText);
+      if (!tlTimelineId) tlTimelineId = data.timeline_id;
+      tlClips.push({id: data.clip_id, position: data.position, original_filename: file.name});
+    } catch(err) {
+      setTlStatus(`❌ Falha em "${file.name}": ${err.message}`);
+      tlPending.push(file);
+    }
+    renderTlList();
+  }
+
+  setTlStatus(tlPending.length === 0 ? `✓ ${total} clipe(s) enviado(s)` : '');
+  btnC.disabled = false;
+  renderTlList();
+});
+
+// ── Finalizar timeline ────────────────────────────────────────────────────────
+async function finalizeTimeline() {
+  if (!tlTimelineId || tlClips.length === 0) return;
+  const btn = document.getElementById('btnR');
+  btn.disabled = true;
+  setOut('', '');
+  setProg(0, 'Iniciando finalização…');
+
+  try {
+    const r = await fetch(`/api/timeline/${tlTimelineId}/finalize`, {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({
+        template:       template,
+        maintitle:      document.getElementById('titl').value.trim(),
+        supertitle:     document.getElementById('supr').value.trim(),
+        font_pct:       parseFloat(document.getElementById('fsz').value),
+        title_pos:      document.getElementById('tpos').value,
+        title_offset_y: parseFloat(document.getElementById('tOffY').value),
+        title_offset_x: parseFloat(document.getElementById('tOffX').value),
+        title_dur:      parseInt(document.getElementById('tdur').value) || 6,
+        wm_mode:        wmMode,
+        wm_pos:         wmPos,
+        wm_size:        parseFloat(document.getElementById('wmSz').value),
+        wm_margin_x:    parseFloat(document.getElementById('wmMx').value),
+        wm_margin_y:    parseFloat(document.getElementById('wmMy').value),
+        wm_opacity:     parseFloat(document.getElementById('wmOp').value),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || r.statusText);
+
+    const jobId = data.job_id;
+    setProg(30, 'Processando… (pode levar alguns segundos)');
+
+    const dlUrl  = `/api/timeline/${tlTimelineId}/finalize/${jobId}/download`;
+    let   pollId = setInterval(async () => {
+      try {
+        const sr  = await fetch(`/api/timeline/${tlTimelineId}/finalize/${jobId}`);
+        const sd  = await sr.json();
+        if (sd.status === 'done') {
+          clearInterval(pollId);
+          setProg(100, '✓ Concluído!');
+          setOut('ok', `✓ Timeline finalizada &nbsp;<a href="${dlUrl}" download style="background:var(--red);color:#fff;padding:5px 12px;border-radius:5px;text-decoration:none;font-weight:700">⬇ Baixar</a>`);
+          btn.disabled = false;
+        } else if (sd.status === 'error') {
+          clearInterval(pollId);
+          setProg(0, '');
+          setOut('err', '❌ ' + (sd.error || 'falha desconhecida'));
+          btn.disabled = false;
+        }
+      } catch(pollErr) {
+        clearInterval(pollId);
+        setOut('err', '❌ Erro no polling: ' + pollErr.message);
+        btn.disabled = false;
+      }
+    }, 2000);
+
+  } catch(err) {
+    setProg(0, '');
+    setOut('err', '❌ ' + err.message);
+    btn.disabled = false;
+  }
+}
+
 // ── Video mode toggle ─────────────────────────────────────────────────────────
 document.getElementById('vidModeT').addEventListener('click', e => {
   const b = e.target.closest('.tb');
@@ -1438,7 +1669,7 @@ document.getElementById('vidModeT').addEventListener('click', e => {
   b.classList.add('on');
   document.getElementById('singlePanel').style.display = vm === 'single' ? '' : 'none';
   document.getElementById('tlPanel').classList.toggle('on', vm === 'timeline');
-  document.getElementById('btnR').disabled = vm === 'timeline' || !vFile;
+  syncBtnR();
 });
 let cX=0,cY=0,cZ=1;
 let cDrag=false,cSX=0,cSY=0,cOX=0,cOY=0;
@@ -1853,7 +2084,10 @@ cw_el.addEventListener('touchend',e=>{if(e.touches.length===0)cDrag=false;lastPi
 window.addEventListener('resize',()=>{resizeCanvases();drawPrev();});
 
 // ── Render ────────────────────────────────────────────────────────────────────
-document.getElementById('btnR').addEventListener('click',renderVideo);
+document.getElementById('btnR').addEventListener('click', () => {
+  if (videoMode === 'timeline') finalizeTimeline();
+  else renderVideo();
+});
 
 async function renderVideo(){
   if(!vFile)return;
