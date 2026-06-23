@@ -1231,6 +1231,14 @@ canvas{display:block}
 .spin{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin-txt{font-size:13px;color:var(--muted);letter-spacing:.5px}
+
+/* ── Timeline mode ── */
+#tlPanel{display:none;margin-top:10px}
+#tlPanel.on{display:block}
+.tl-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;min-height:0}
+.tl-empty{font-size:11px;color:var(--muted);text-align:center;padding:14px 0;border:1px dashed var(--border2);border-radius:var(--radius)}
+.btn-add{width:100%;padding:7px;background:transparent;border:1px dashed var(--border2);border-radius:var(--radius);color:var(--muted);font-size:12px;font-family:var(--font);cursor:pointer;transition:all .15s;text-align:center}
+.btn-add:hover{border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
@@ -1266,11 +1274,33 @@ canvas{display:block}
 
   <div class="blk">
     <div class="slbl">Vídeo</div>
-    <div class="dz" id="dz">
-      <input type="file" id="vi" accept="video/*">
-      <div class="dz-icon">🎬</div>
-      <div class="dz-main" id="dzTxt">Arraste ou clique para selecionar</div>
-      <div class="dz-sub">MP4 · MOV · WebM</div>
+    <div class="tabs" id="vidModeT" style="margin-bottom:10px">
+      <div class="tb on" id="tabSingle" data-vm="single">Vídeo Único</div>
+      <div class="tb"    id="tabTl"     data-vm="timeline">Timeline</div>
+    </div>
+
+    <!-- Modo: Vídeo Único -->
+    <div id="singlePanel">
+      <div class="dz" id="dz">
+        <input type="file" id="vi" accept="video/*">
+        <div class="dz-icon">🎬</div>
+        <div class="dz-main" id="dzTxt">Arraste ou clique para selecionar</div>
+        <div class="dz-sub">MP4 · MOV · WebM</div>
+      </div>
+    </div>
+
+    <!-- Modo: Timeline -->
+    <div id="tlPanel">
+      <div class="dz" id="dzTl">
+        <input type="file" id="viTl" accept="video/*" multiple>
+        <div class="dz-icon">🎞</div>
+        <div class="dz-main">Arraste ou clique para adicionar clipes</div>
+        <div class="dz-sub">Múltiplos arquivos · MP4 · MOV · WebM</div>
+      </div>
+      <div id="tlList" class="tl-list" style="margin-top:8px">
+        <div class="tl-empty" id="tlEmpty">Nenhum clipe adicionado ainda</div>
+      </div>
+      <button class="btn-add" id="btnAddClip" onclick="document.getElementById('viTl').click()">+ Adicionar vídeo</button>
     </div>
   </div>
 
@@ -1395,6 +1425,21 @@ let vFile=null, lgURL=null, lgIsDefault=false;
 let vW=0, vH=0;
 let fmt='9:16', wmMode='image', wmPos='topleft';
 let template='globo';
+let videoMode='single'; // 'single' | 'timeline'
+
+// ── Video mode toggle ─────────────────────────────────────────────────────────
+document.getElementById('vidModeT').addEventListener('click', e => {
+  const b = e.target.closest('.tb');
+  if (!b) return;
+  const vm = b.dataset.vm;
+  if (vm === videoMode) return;
+  videoMode = vm;
+  document.querySelectorAll('#vidModeT .tb').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('singlePanel').style.display = vm === 'single' ? '' : 'none';
+  document.getElementById('tlPanel').classList.toggle('on', vm === 'timeline');
+  document.getElementById('btnR').disabled = vm === 'timeline' || !vFile;
+});
 let cX=0,cY=0,cZ=1;
 let cDrag=false,cSX=0,cSY=0,cOX=0,cOY=0;
 let lastVURL=null;
