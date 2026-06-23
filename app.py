@@ -708,7 +708,7 @@ def timeline_reorder(timeline_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        for position, clip_id in enumerate(clip_ids):
+        for position, clip_id in enumerate(clip_ids, start=1):
             cur.execute(
                 """
                 UPDATE timeline_clips
@@ -1272,6 +1272,7 @@ canvas{display:block}
 .tl-item .tl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-item .tl-rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;flex-shrink:0}
 .tl-item .tl-rm:hover{color:var(--red)}
+.tl-item .tl-rm:disabled{opacity:.3;cursor:default}
 .tl-item.pending{border-style:dashed;opacity:.7}
 #btnConfirm{display:none;width:100%;padding:8px;margin-top:6px;background:rgba(232,0,45,.1);border:1px solid rgba(232,0,45,.3);border-radius:var(--radius);color:var(--red);font-size:12px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .15s}
 #btnConfirm:hover{background:rgba(232,0,45,.18)}
@@ -1498,11 +1499,15 @@ function renderTlList() {
     list.appendChild(row);
   });
 
-  tlClips.forEach(c => {
+  tlClips.forEach((c, i) => {
+    const isFirst = i === 0;
+    const isLast  = i === tlClips.length - 1;
     const row = document.createElement('div');
     row.className = 'tl-item';
     row.innerHTML = `<span class="tl-pos">${c.position}</span>
       <span class="tl-name" title="${c.original_filename}">${c.original_filename}</span>
+      <button class="tl-rm tl-ord" data-ord-idx="${i}" data-ord-dir="up"   title="Mover para cima"${isFirst ? ' disabled' : ''}>▲</button>
+      <button class="tl-rm tl-ord" data-ord-idx="${i}" data-ord-dir="down" title="Mover para baixo"${isLast  ? ' disabled' : ''}>▼</button>
       <button class="tl-rm" data-id="${c.id}" title="Remover">×</button>`;
     list.appendChild(row);
   });
@@ -1517,8 +1522,24 @@ function setTlStatus(msg) {
   document.getElementById('tlStatus').textContent = msg;
 }
 
-// ── Remove item da lista ──────────────────────────────────────────────────────
+// ── Reorder / Remove item da lista ───────────────────────────────────────────
 document.getElementById('tlList').addEventListener('click', async e => {
+  // Reorder buttons (▲▼) — verificado antes do remove
+  const ordBtn = e.target.closest('.tl-ord');
+  if (ordBtn && !ordBtn.disabled && tlTimelineId) {
+    const idx = Number(ordBtn.dataset.ordIdx);
+    const j   = ordBtn.dataset.ordDir === 'up' ? idx - 1 : idx + 1;
+    [tlClips[idx], tlClips[j]] = [tlClips[j], tlClips[idx]];
+    tlClips.forEach((c, k) => c.position = k + 1);
+    renderTlList();
+    fetch(`/api/timeline/${tlTimelineId}/reorder`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({clip_ids: tlClips.map(c => c.id)})
+    }).catch(err => setTlStatus('❌ Reorder: ' + err.message));
+    return;
+  }
+
   const btn = e.target.closest('.tl-rm');
   if (!btn) return;
 
