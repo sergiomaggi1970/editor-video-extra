@@ -4,7 +4,7 @@ Editor de Vídeo — O Globo / Extra
 Servidor Flask com FFmpeg nativo
 """
 
-import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io
+import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io, threading
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template_string
@@ -726,6 +726,286 @@ def timeline_reorder(timeline_id):
             cur.close()
         if conn:
             conn.close()
+
+
+def _run_finalize(job_id, timeline_id, params):
+    """
+    Roda em thread separada:
+    1. Busca clipes no banco
+    2. Concat via ffmpeg (-c copy)
+    3. Lê dimensões do concat
+    4. Aplica title overlay + watermark (mesma lógica do /render)
+    5. Atualiza render_jobs → done | error
+    """
+    timeline_dir  = Path(f'/tmp/timeline_{timeline_id}')
+    timeline_dir.mkdir(parents=True, exist_ok=True)
+
+    concat_list   = timeline_dir / f'concat_{job_id[:8]}.txt'
+    tmp_concat    = timeline_dir / f'tmp_concat_{job_id[:8]}.mp4'
+    overlay_png   = timeline_dir / f'title_overlay_{job_id[:8]}.png'
+    final_path    = timeline_dir / f'final_{job_id[:8]}.mp4'
+
+    _success = False
+
+    def _update_job(status, output_path=None, error=None):
+        conn = cur = None
+        try:
+            conn = get_db_connection()
+            cur  = conn.cursor()
+            cur.execute(
+                """
+                UPDATE render_jobs
+                SET status = %s, output_path = %s, error = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (status, output_path, error, job_id)
+            )
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            if cur:  cur.close()
+            if conn: conn.close()
+
+    try:
+        # ── Etapa 1: busca clipes ────────────────────────────────────────
+        conn = cur = None
+        try:
+            conn = get_db_connection()
+            cur  = conn.cursor()
+            cur.execute(
+                "SELECT local_path FROM timeline_clips WHERE timeline_id = %s ORDER BY position",
+                (timeline_id,)
+            )
+            rows = cur.fetchall()
+        finally:
+            if cur:  cur.close()
+            if conn: conn.close()
+
+        if not rows:
+            _update_job('error', error='Nenhum clipe encontrado para essa timeline')
+            return
+
+        missing = [r[0] for r in rows if not r[0] or not Path(r[0]).exists()]
+        if missing:
+            _update_job('error', error=f'Arquivos não encontrados no disco: {missing}')
+            return
+
+        # ── Etapa 2: concat ─────────────────────────────────────────────
+        with open(concat_list, 'w') as f:
+            for (path,) in rows:
+                f.write(f"file '{path}'\n")
+
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                 '-i', str(concat_list), '-c', 'copy', str(tmp_concat)],
+                capture_output=True, text=True, timeout=300
+            )
+        except subprocess.TimeoutExpired:
+            _update_job('error', error='ffmpeg concat excedeu 300s')
+            return
+
+        if result.returncode != 0:
+            _update_job('error', error=f'ffmpeg concat error:\n{result.stderr[-2000:]}')
+            return
+
+        # ── Etapa 3: dimensões do concat ─────────────────────────────────
+        out_w, out_h, _, _ = get_video_info(str(tmp_concat))
+        if out_w == 0:
+            _update_job('error', error='Não foi possível ler dimensões do vídeo concatenado')
+            return
+
+        # ── Etapa 4: overlay ─────────────────────────────────────────────
+        template      = params['template']
+        maintitle     = params['maintitle']
+        supertitle    = params.get('supertitle', '')
+        font_pct      = params.get('font_pct', 0.059)
+        title_pos     = params.get('title_pos', 'bottom')
+        offset_x      = params.get('title_offset_x', 0.0)
+        offset_y      = params.get('title_offset_y', 0.0)
+        title_dur     = params.get('title_dur', 6)
+        wm_mode       = params.get('wm_mode', 'image')
+        wm_pos        = params.get('wm_pos', 'topleft')
+        wm_size_pct   = params.get('wm_size_pct', 0.25)
+        wm_margin_x   = params.get('wm_margin_x', 0.11)
+        wm_margin_y   = params.get('wm_margin_y', 0.11)
+        wm_opacity    = params.get('wm_opacity', 1.0)
+
+        logo_path = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
+
+        overlay_img = make_title_overlay(
+            out_w, out_h, supertitle, maintitle,
+            font_pct, title_pos, offset_x, offset_y, template
+        )
+        overlay_img.save(str(overlay_png))
+
+        # Monta filter_complex (sem rotação/crop — clipes já normalizados)
+        inputs   = ['-i', str(tmp_concat), '-i', str(overlay_png)]
+        fc_parts = []
+        cur_label = '0:v'
+        input_idx = 2
+
+        # Title overlay
+        fc_parts.append(
+            f'[{cur_label}][1:v]overlay=0:0:enable=lt(t\\,{title_dur})[titled]'
+        )
+        cur_label = 'titled'
+
+        # Watermark
+        has_wm = (wm_mode == 'image') and Path(logo_path).exists()
+        if has_wm:
+            wm_short = min(out_w, out_h)
+            wm_w     = int(wm_short * wm_size_pct)
+            wm_mx    = int(out_w * wm_margin_x)
+            wm_my    = int(out_h * wm_margin_y)
+            if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
+            elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
+            elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
+            else:                         ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
+
+            inputs += ['-i', logo_path]
+            fc_parts.append(
+                f'[{input_idx}:v]scale={wm_w}:-1,format=rgba,'
+                f'colorchannelmixer=aa={wm_opacity}[wm]'
+            )
+            fc_parts.append(f'[{cur_label}][wm]overlay={ox}:{oy}[out]')
+            cur_label = 'out'
+            input_idx += 1
+
+        cmd = (
+            ['ffmpeg', '-y']
+            + inputs
+            + ['-filter_complex', ';'.join(fc_parts),
+               '-map', f'[{cur_label}]', '-map', '0:a?',
+               '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+               '-c:a', 'copy', '-movflags', '+faststart',
+               str(final_path)]
+        )
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            _update_job('error', error='ffmpeg overlay excedeu 300s')
+            return
+
+        if result.returncode != 0:
+            _update_job('error', error=f'ffmpeg overlay error:\n{result.stderr[-2000:]}')
+            return
+
+        _success = True
+        _update_job('done', output_path=str(final_path))
+
+        # Limpeza pós-entrega: remove clipes intermediários do disco e do banco
+        for clip_file in timeline_dir.glob('clip_*.mp4'):
+            clip_file.unlink(missing_ok=True)
+
+        conn = cur = None
+        try:
+            conn = get_db_connection()
+            cur  = conn.cursor()
+            cur.execute(
+                "DELETE FROM timeline_clips WHERE timeline_id = %s",
+                (timeline_id,)
+            )
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            if cur:  cur.close()
+            if conn: conn.close()
+
+    except Exception as e:
+        _update_job('error', error=str(e))
+    finally:
+        concat_list.unlink(missing_ok=True)
+        tmp_concat.unlink(missing_ok=True)
+        overlay_png.unlink(missing_ok=True)
+        if not _success:
+            final_path.unlink(missing_ok=True)
+
+
+@app.route('/api/timeline/<timeline_id>/finalize', methods=['POST'])
+def timeline_finalize(timeline_id):
+    data = request.get_json(silent=True) or {}
+
+    template  = data.get('template', '').strip()
+    maintitle = data.get('maintitle', '').strip()
+    if template not in ('extra', 'globo'):
+        return jsonify({'error': 'template deve ser "extra" ou "globo"'}), 400
+    if not maintitle:
+        return jsonify({'error': 'maintitle é obrigatório'}), 400
+
+    params = {
+        'template':       template,
+        'maintitle':      maintitle,
+        'supertitle':     data.get('supertitle', ''),
+        'font_pct':       float(data.get('font_pct', 5.9)) / 100,
+        'title_pos':      data.get('title_pos', 'bottom'),
+        'title_offset_x': float(data.get('title_offset_x', 0)) / 100,
+        'title_offset_y': float(data.get('title_offset_y', 0)) / 100,
+        'title_dur':      int(data.get('title_dur', 6)),
+        'wm_mode':        data.get('wm_mode', 'image'),
+        'wm_pos':         data.get('wm_pos', 'topleft'),
+        'wm_size_pct':    float(data.get('wm_size', 25)) / 100,
+        'wm_margin_x':    float(data.get('wm_margin_x', 11)) / 100,
+        'wm_margin_y':    float(data.get('wm_margin_y', 11)) / 100,
+        'wm_opacity':     float(data.get('wm_opacity', 100)) / 100,
+    }
+
+    job_id = str(uuid.uuid4())
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            "INSERT INTO render_jobs (id, timeline_id) VALUES (%s, %s)",
+            (job_id, timeline_id)
+        )
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:  cur.close()
+        if conn: conn.close()
+
+    threading.Thread(
+        target=_run_finalize, args=(job_id, timeline_id, params), daemon=True
+    ).start()
+
+    return jsonify({'job_id': job_id, 'status': 'processing'})
+
+
+@app.route('/api/timeline/<timeline_id>/finalize/<job_id>', methods=['GET'])
+def timeline_finalize_status(timeline_id, job_id):
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            """
+            SELECT status, output_path, error, updated_at
+            FROM render_jobs
+            WHERE id = %s AND timeline_id = %s
+            """,
+            (job_id, timeline_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'job not found'}), 404
+        status, output_path, error, updated_at = row
+        return jsonify({
+            'job_id':      job_id,
+            'status':      status,
+            'output_path': output_path,
+            'error':       error,
+            'updated_at':  updated_at.isoformat() if updated_at else None,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:  cur.close()
+        if conn: conn.close()
 
 
 # In-memory job store for extension to pick up
