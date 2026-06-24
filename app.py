@@ -1718,7 +1718,7 @@ function syncBtnR() {
 }
 
 // ── Render timeline list ──────────────────────────────────────────────────────
-function renderTlList() {
+function renderTlList(skipPreview = false) {
   const list  = document.getElementById('tlList');
   const empty = document.getElementById('tlEmpty');
   const btnC  = document.getElementById('btnConfirm');
@@ -1750,7 +1750,7 @@ function renderTlList() {
   btnC.style.display  = tlPending.length > 0 ? 'block' : 'none';
   btnC.textContent    = `Confirmar e enviar (${tlPending.length})`;
   syncBtnR();
-  if (videoMode === 'timeline') refreshTlPreview(0);
+  if (videoMode === 'timeline' && !skipPreview) refreshTlPreview(0);
 }
 
 function setTlStatus(msg) {
@@ -1806,12 +1806,18 @@ document.getElementById('tlList').addEventListener('click', async e => {
     const j   = ordBtn.dataset.ordDir === 'up' ? idx - 1 : idx + 1;
     [tlClips[idx], tlClips[j]] = [tlClips[j], tlClips[idx]];
     tlClips.forEach((c, k) => c.position = k + 1);
-    renderTlList();
-    fetch(`/api/timeline/${tlTimelineId}/reorder`, {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({clip_ids: tlClips.map(c => c.id)})
-    }).catch(err => setTlStatus('❌ Reorder: ' + err.message));
+    renderTlList(true);
+    try {
+      const r = await fetch(`/api/timeline/${tlTimelineId}/reorder`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({clip_ids: tlClips.map(c => c.id)})
+      });
+      if (!r.ok) throw new Error(r.statusText);
+      refreshTlPreview(0);
+    } catch(err) {
+      setTlStatus('❌ Reorder: ' + err.message);
+    }
     return;
   }
 
