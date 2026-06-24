@@ -1057,8 +1057,8 @@ def timeline_preview(timeline_id):
     supertitle    = request.args.get('supertitle', '')
     font_pct      = float(request.args.get('font_pct', 5.9)) / 100
     title_pos     = request.args.get('title_pos', 'bottom')
-    offset_x      = float(request.args.get('title_offset_x', 0))
-    offset_y      = float(request.args.get('title_offset_y', 0))
+    offset_x      = float(request.args.get('title_offset_x', 0)) / 100
+    offset_y      = float(request.args.get('title_offset_y', 0)) / 100
     title_dur     = int(request.args.get('title_dur', 6))
     wm_mode       = request.args.get('wm_mode', 'image')
     wm_pos        = request.args.get('wm_pos', 'topleft')
@@ -1503,6 +1503,9 @@ canvas{display:block}
 #btnConfirm{display:none;width:100%;padding:8px;margin-top:6px;background:rgba(232,0,45,.1);border:1px solid rgba(232,0,45,.3);border-radius:var(--radius);color:var(--red);font-size:12px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .15s}
 #btnConfirm:hover{background:rgba(232,0,45,.18)}
 #tlStatus{font-size:11px;color:var(--muted);margin-top:6px;min-height:16px;text-align:center}
+#tlPrevWrap{display:none;width:390px;max-width:100%}
+#tlPreview{display:none;width:100%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.8);transition:opacity .25s}
+#tlPrevPlaceholder{color:var(--muted);font-size:11px;text-align:center;padding:80px 20px;border:1px dashed var(--border2);border-radius:8px;line-height:1.7}
 </style>
 </head>
 <body>
@@ -1656,6 +1659,10 @@ canvas{display:block}
     <canvas id="cg" width="390" height="693" style="position:absolute;inset:0;pointer-events:none;display:none"></canvas>
   </div>
 </div>
+  <div id="tlPrevWrap">
+    <div id="tlPrevPlaceholder">Confirme pelo menos um clipe<br>para ver o preview com overlay</div>
+    <img id="tlPreview" alt="Preview timeline">
+  </div>
   <div id="cropB" style="display:none;margin-top:14px;max-width:480px;background:var(--panel,#16161a);border:1px solid var(--border2,#2a2a30);border-radius:10px;padding:12px 16px">
     <div class="slbl" style="margin-bottom:4px">Enquadramento</div>
     <div class="hint" style="margin-bottom:8px">Arraste o preview · scroll = zoom</div>
@@ -1694,6 +1701,7 @@ let videoMode='single'; // 'single' | 'timeline'
 
 // ── Timeline state ────────────────────────────────────────────────────────────
 let tlTimelineId = null;
+let _tlPrevTimer = null;
 let tlClips      = [];   // [{id, position, original_filename}]
 let tlPending    = [];   // [File, ...]
 
@@ -1742,10 +1750,51 @@ function renderTlList() {
   btnC.style.display  = tlPending.length > 0 ? 'block' : 'none';
   btnC.textContent    = `Confirmar e enviar (${tlPending.length})`;
   syncBtnR();
+  if (videoMode === 'timeline') refreshTlPreview(0);
 }
 
 function setTlStatus(msg) {
   document.getElementById('tlStatus').textContent = msg;
+}
+
+function _doRefreshTlPreview() {
+  const img   = document.getElementById('tlPreview');
+  const ph    = document.getElementById('tlPrevPlaceholder');
+  if (!tlTimelineId || tlClips.length === 0) {
+    img.style.display = 'none';
+    ph.style.display  = '';
+    return;
+  }
+  ph.style.display  = 'none';
+  img.style.display = 'block';
+  img.style.opacity = '0.4';
+  const p = new URLSearchParams({
+    template,
+    maintitle:      document.getElementById('titl').value.trim(),
+    supertitle:     document.getElementById('supr').value.trim(),
+    font_pct:       document.getElementById('fsz').value,
+    title_pos:      document.getElementById('tpos').value,
+    title_offset_x: document.getElementById('tOffX').value,
+    title_offset_y: document.getElementById('tOffY').value,
+    title_dur:      document.getElementById('tdur').value,
+    wm_mode:        wmMode === 'text' ? 'none' : wmMode,
+    wm_pos:         wmPos,
+    wm_size:        document.getElementById('wmSz').value,
+    wm_margin_x:    document.getElementById('wmMx').value,
+    wm_margin_y:    document.getElementById('wmMy').value,
+    wm_opacity:     document.getElementById('wmOp').value,
+    _t:             Date.now(),
+  });
+  const url = `/api/timeline/${tlTimelineId}/preview?${p}`;
+  const tmp = new Image();
+  tmp.onload  = () => { img.src = url; img.style.opacity = '1'; };
+  tmp.onerror = () => { img.style.opacity = '1'; };
+  tmp.src = url;
+}
+
+function refreshTlPreview(delay) {
+  clearTimeout(_tlPrevTimer);
+  _tlPrevTimer = setTimeout(_doRefreshTlPreview, delay === undefined ? 500 : delay);
 }
 
 // ── Reorder / Remove item da lista ───────────────────────────────────────────
@@ -1916,6 +1965,9 @@ document.getElementById('vidModeT').addEventListener('click', e => {
   b.classList.add('on');
   document.getElementById('singlePanel').style.display = vm === 'single' ? '' : 'none';
   document.getElementById('tlPanel').classList.toggle('on', vm === 'timeline');
+  document.getElementById('cw').style.display       = vm === 'single'   ? '' : 'none';
+  document.getElementById('tlPrevWrap').style.display = vm === 'timeline' ? 'block' : 'none';
+  if (vm === 'timeline') refreshTlPreview(0);
   syncBtnR();
 });
 let cX=0,cY=0,cZ=1;
@@ -2177,6 +2229,7 @@ function getLgImg(){
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 function drawPrev(){
+  if(videoMode==='timeline'){refreshTlPreview();return;}
   const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
   resizeCanvases();
   const cw=cv.width,ch=cv.height;
