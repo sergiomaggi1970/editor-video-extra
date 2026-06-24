@@ -801,6 +801,8 @@ def _run_finalize(job_id, timeline_id, params):
             result = subprocess.run(
                 ['ffmpeg', '-y', '-fflags', '+genpts',
                  '-f', 'concat', '-safe', '0', '-i', str(concat_list),
+                 '-vf', 'setpts=PTS-STARTPTS',
+                 '-af', 'asetpts=PTS-STARTPTS',
                  '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                  '-c:a', 'aac', '-b:a', '128k',
                  str(tmp_concat)],
