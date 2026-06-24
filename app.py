@@ -4,7 +4,7 @@ Editor de Vídeo — O Globo / Extra
 Servidor Flask com FFmpeg nativo
 """
 
-import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io, threading
+import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io, threading, time
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template_string
@@ -1148,6 +1148,89 @@ def publish_ef():
 def index():
     return render_template_string(HTML_TEMPLATE,
         has_logo=Path(LOGO_PATH).exists())
+
+
+# ── Cleanup de timelines abandonadas ─────────────────────────────────────────
+
+_CLEANUP_LOCK_ID = 918273
+_CLEANUP_INTERVAL = 3600  # segundos (1 hora)
+
+
+def _cleanup_abandoned_timelines():
+    """Thread daemon: a cada hora, limpa timelines e jobs com >24h de vida."""
+    while True:
+        time.sleep(_CLEANUP_INTERVAL)
+        conn = None
+        try:
+            conn = get_db_connection()
+            conn.autocommit = True
+            cur = conn.cursor()
+
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (_CLEANUP_LOCK_ID,))
+            if not cur.fetchone()[0]:
+                print('[cleanup] Lock não obtido — outro worker já está limpando')
+                continue
+
+            try:
+                # ── timeline_clips com >24h ───────────────────────────────────
+                cur.execute("""
+                    SELECT DISTINCT timeline_id
+                    FROM timeline_clips
+                    WHERE created_at < NOW() - INTERVAL '24 hours'
+                """)
+                tids = [str(row[0]) for row in cur.fetchall()]
+
+                tl_cleaned = 0
+                for tid in tids:
+                    tl_dir = Path(f'/tmp/timeline_{tid}')
+                    if tl_dir.exists():
+                        for clip in tl_dir.glob('clip_*.mp4'):
+                            clip.unlink(missing_ok=True)
+                        try:
+                            tl_dir.rmdir()   # só remove se vazio
+                        except OSError:
+                            pass             # ainda tem final_*.mp4 ou outros
+                    cur.execute(
+                        "DELETE FROM timeline_clips WHERE timeline_id = %s",
+                        (tid,)
+                    )
+                    tl_cleaned += 1
+
+                # ── render_jobs travados/com erro com >24h ────────────────────
+                cur.execute("""
+                    SELECT id, timeline_id
+                    FROM render_jobs
+                    WHERE status IN ('error', 'processing')
+                      AND created_at < NOW() - INTERVAL '24 hours'
+                """)
+                stale_jobs = cur.fetchall()
+
+                jobs_cleaned = 0
+                for job_id, tid in stale_jobs:
+                    cur.execute(
+                        "DELETE FROM render_jobs WHERE id = %s",
+                        (str(job_id),)
+                    )
+                    jobs_cleaned += 1
+
+                print(
+                    f'[cleanup] {tl_cleaned} timeline(s) e '
+                    f'{jobs_cleaned} render_job(s) removido(s)'
+                )
+
+            finally:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (_CLEANUP_LOCK_ID,))
+
+        except Exception as e:
+            print(f'[cleanup] Erro: {e}')
+        finally:
+            if conn:
+                conn.close()
+
+
+threading.Thread(
+    target=_cleanup_abandoned_timelines, daemon=True, name='tl-cleanup'
+).start()
 
 
 # ── HTML Template ─────────────────────────────────────────────────────────────
