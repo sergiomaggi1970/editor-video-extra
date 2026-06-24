@@ -732,10 +732,11 @@ def _run_finalize(job_id, timeline_id, params):
     """
     Roda em thread separada:
     1. Busca clipes no banco
-    2. Concat via ffmpeg (-c copy)
+    2. Concat via ffmpeg (re-encode libx264+aac, -fflags +genpts)
     3. Lê dimensões do concat
     4. Aplica title overlay + watermark (mesma lógica do /render)
     5. Atualiza render_jobs → done | error
+    Clipes (clip_*.mp4) são preservados para múltiplos finalizes.
     """
     timeline_dir  = Path(f'/tmp/timeline_{timeline_id}')
     timeline_dir.mkdir(parents=True, exist_ok=True)
@@ -898,25 +899,6 @@ def _run_finalize(job_id, timeline_id, params):
 
         _success = True
         _update_job('done', output_path=str(final_path))
-
-        # Limpeza pós-entrega: remove clipes intermediários do disco e do banco
-        for clip_file in timeline_dir.glob('clip_*.mp4'):
-            clip_file.unlink(missing_ok=True)
-
-        conn = cur = None
-        try:
-            conn = get_db_connection()
-            cur  = conn.cursor()
-            cur.execute(
-                "DELETE FROM timeline_clips WHERE timeline_id = %s",
-                (timeline_id,)
-            )
-            conn.commit()
-        except Exception:
-            pass
-        finally:
-            if cur:  cur.close()
-            if conn: conn.close()
 
     except Exception as e:
         _update_job('error', error=str(e))
@@ -1318,11 +1300,11 @@ def _cleanup_abandoned_timelines():
                 continue
 
             try:
-                # ── timeline_clips com >24h ───────────────────────────────────
+                # ── timeline_clips com >7 dias ───────────────────────────────
                 cur.execute("""
                     SELECT DISTINCT timeline_id
                     FROM timeline_clips
-                    WHERE created_at < NOW() - INTERVAL '24 hours'
+                    WHERE created_at < NOW() - INTERVAL '7 days'
                 """)
                 tids = [str(row[0]) for row in cur.fetchall()]
 
@@ -1342,12 +1324,12 @@ def _cleanup_abandoned_timelines():
                     )
                     tl_cleaned += 1
 
-                # ── render_jobs travados/com erro com >24h ────────────────────
+                # ── render_jobs travados/com erro com >7 dias ────────────────
                 cur.execute("""
                     SELECT id, timeline_id
                     FROM render_jobs
                     WHERE status IN ('error', 'processing')
-                      AND created_at < NOW() - INTERVAL '24 hours'
+                      AND created_at < NOW() - INTERVAL '7 days'
                 """)
                 stale_jobs = cur.fetchall()
 
