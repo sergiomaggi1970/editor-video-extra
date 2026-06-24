@@ -798,8 +798,11 @@ def _run_finalize(job_id, timeline_id, params):
 
         try:
             result = subprocess.run(
-                ['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
-                 '-i', str(concat_list), '-c', 'copy', str(tmp_concat)],
+                ['ffmpeg', '-y', '-fflags', '+genpts',
+                 '-f', 'concat', '-safe', '0', '-i', str(concat_list),
+                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                 '-c:a', 'aac', '-b:a', '128k',
+                 str(tmp_concat)],
                 capture_output=True, text=True, timeout=300
             )
         except subprocess.TimeoutExpired:
