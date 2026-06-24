@@ -1036,6 +1036,149 @@ def timeline_finalize_download(timeline_id, job_id):
         if conn: conn.close()
 
 
+# ── Timeline preview ──────────────────────────────────────────────────────────
+
+_PREVIEW_FMT_DIMS = {
+    'vertical':   (1080, 1920),
+    'square':     (1080, 1080),
+    'horizontal': (1920, 1080),
+}
+
+@app.route('/api/timeline/<timeline_id>/preview', methods=['GET'])
+def timeline_preview(timeline_id):
+    """
+    Extrai o 1º frame do clipe com menor position e aplica overlay de título
+    e watermark com os mesmos parâmetros/filter_complex do finalize.
+    Retorna JPEG.
+    """
+    # ── Lê parâmetros ──────────────────────────────────────────────────────
+    template      = request.args.get('template', 'extra')
+    maintitle     = request.args.get('maintitle', '')
+    supertitle    = request.args.get('supertitle', '')
+    font_pct      = float(request.args.get('font_pct', 5.9)) / 100
+    title_pos     = request.args.get('title_pos', 'bottom')
+    offset_x      = float(request.args.get('title_offset_x', 0))
+    offset_y      = float(request.args.get('title_offset_y', 0))
+    title_dur     = int(request.args.get('title_dur', 6))
+    wm_mode       = request.args.get('wm_mode', 'image')
+    wm_pos        = request.args.get('wm_pos', 'topleft')
+    wm_size_pct   = float(request.args.get('wm_size', 25)) / 100
+    wm_margin_x   = float(request.args.get('wm_margin_x', 11)) / 100
+    wm_margin_y   = float(request.args.get('wm_margin_y', 11)) / 100
+    wm_opacity    = float(request.args.get('wm_opacity', 100)) / 100
+
+    # ── Busca clipe com menor position ────────────────────────────────────
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            """
+            SELECT local_path, output_format
+            FROM timeline_clips
+            WHERE timeline_id = %s
+            ORDER BY position ASC
+            LIMIT 1
+            """,
+            (timeline_id,)
+        )
+        row = cur.fetchone()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:  cur.close()
+        if conn: conn.close()
+
+    if not row:
+        return jsonify({'error': 'no clips in timeline'}), 404
+
+    local_path, output_format = row
+    if not Path(local_path).exists():
+        return jsonify({'error': 'clip file not found on disk'}), 404
+
+    out_w, out_h = _PREVIEW_FMT_DIMS.get(output_format, (1080, 1920))
+    logo_path    = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
+
+    tmp_dir = tempfile.mkdtemp(prefix='preview_')
+    try:
+        frame_path   = Path(tmp_dir) / 'frame.jpg'
+        overlay_path = Path(tmp_dir) / 'overlay.png'
+        preview_path = Path(tmp_dir) / 'preview.jpg'
+
+        # ── Extrai 1 frame ────────────────────────────────────────────────
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-ss', '0', '-i', local_path,
+                 '-vframes', '1', '-q:v', '2', str(frame_path)],
+                capture_output=True, text=True, timeout=15
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({'error': 'frame extraction timed out'}), 504
+
+        if result.returncode != 0 or not frame_path.exists():
+            return jsonify({'error': 'frame extraction failed'}), 500
+
+        # ── Gera overlay PNG ──────────────────────────────────────────────
+        overlay_img = make_title_overlay(
+            out_w, out_h, supertitle, maintitle,
+            font_pct, title_pos, offset_x, offset_y, template
+        )
+        overlay_img.save(str(overlay_path))
+
+        # ── Monta filter_complex (igual ao finalize) ──────────────────────
+        inputs    = ['-i', str(frame_path), '-i', str(overlay_path)]
+        fc_parts  = []
+        cur_label = '0:v'
+        input_idx = 2
+
+        fc_parts.append(
+            f'[{cur_label}][1:v]overlay=0:0:enable=lt(t\\,{title_dur})[titled]'
+        )
+        cur_label = 'titled'
+
+        has_wm = (wm_mode == 'image') and Path(logo_path).exists()
+        if has_wm:
+            wm_short = min(out_w, out_h)
+            wm_w     = int(wm_short * wm_size_pct)
+            wm_mx    = int(out_w * wm_margin_x)
+            wm_my    = int(out_h * wm_margin_y)
+            if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
+            elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
+            elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
+            else:                         ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
+
+            inputs += ['-i', logo_path]
+            fc_parts.append(
+                f'[{input_idx}:v]scale={wm_w}:-1,format=rgba,'
+                f'colorchannelmixer=aa={wm_opacity}[wm]'
+            )
+            fc_parts.append(f'[{cur_label}][wm]overlay={ox}:{oy}[out]')
+            cur_label = 'out'
+
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-y'] + inputs
+                + ['-filter_complex', ';'.join(fc_parts),
+                   '-map', f'[{cur_label}]',
+                   '-vframes', '1', '-q:v', '2', str(preview_path)],
+                capture_output=True, text=True, timeout=15
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({'error': 'overlay timed out'}), 504
+
+        if result.returncode != 0 or not preview_path.exists():
+            return jsonify({'error': 'overlay failed'}), 500
+
+        return send_file(
+            str(preview_path),
+            mimetype='image/jpeg',
+            max_age=0,
+        )
+
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 # In-memory job store for extension to pick up
 _ef_jobs = {}
 
