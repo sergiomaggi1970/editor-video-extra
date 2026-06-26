@@ -4,11 +4,19 @@ Editor de Vídeo — O Globo / Extra
 Servidor Flask com FFmpeg nativo
 """
 
-import os, sys, json, uuid, subprocess, tempfile, shutil, base64, re, io, threading, time
+import os
+import json
+import uuid
+import subprocess
+import tempfile
+import shutil
+import re
+import io
+import threading
+import time
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template_string
-from functools import wraps
 from dotenv import load_dotenv
 import psycopg2
 
@@ -22,12 +30,12 @@ def get_db_connection():
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
-BASE_DIR   = Path(__file__).parent
-FONT_PATH        = str(BASE_DIR / 'exo2-extrabold.ttf')          # Extra
-LOGO_PATH        = str(BASE_DIR / 'extra_logo.png')               # Extra
-GLOBO_LOGO_PATH  = str(BASE_DIR / 'oglobo_logo.png')
+BASE_DIR = Path(__file__).parent
+FONT_PATH = str(BASE_DIR / 'exo2-extrabold.ttf')
+LOGO_PATH = str(BASE_DIR / 'extra_logo.png')
+GLOBO_LOGO_PATH = str(BASE_DIR / 'oglobo_logo.png')
 GLOBO_SUPER_FONT = str(BASE_DIR / 'opensans-regular.ttf')
-GLOBO_MAIN_FONT  = str(BASE_DIR / 'corsario-vf.otf')
+GLOBO_MAIN_FONT = str(BASE_DIR / 'corsario-vf.otf')
 # Use /tmp on Railway (ephemeral, but fine for video processing)
 UPLOAD_DIR = Path('/tmp/editor_uploads')
 OUTPUT_DIR = Path('/tmp/editor_outputs')
@@ -36,6 +44,7 @@ OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 # ── FFmpeg helpers ────────────────────────────────────────────────────────────
 
+
 def ffmpeg_run(args, cwd=None):
     cmd = ['ffmpeg', '-y'] + args
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
@@ -43,12 +52,13 @@ def ffmpeg_run(args, cwd=None):
         raise RuntimeError(f"FFmpeg error:\n{result.stderr[-2000:]}")
     return result
 
+
 def get_video_info(path):
     """Returns (width, height, duration, rotation) of a video file."""
-    cmd = ['ffprobe','-v','quiet','-print_format','json','-show_streams','-show_format', str(path)]
+    cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', str(path)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     data = json.loads(r.stdout)
-    video = next((s for s in data.get('streams',[]) if s.get('codec_type')=='video'), None)
+    video = next((s for s in data.get('streams', []) if s.get('codec_type') == 'video'), None)
     fmt = data.get('format', {})
     w = int(video.get('width', 0)) if video else 0
     h = int(video.get('height', 0)) if video else 0
@@ -56,8 +66,10 @@ def get_video_info(path):
     # Ler rotação do side_data_list (Display Matrix) ou tags
     rotate = 0
     if video:
-        try: rotate = int(video.get('tags', {}).get('rotate', 0))
-        except: rotate = 0
+        try:
+            rotate = int(video.get('tags', {}).get('rotate', 0))
+        except Exception:
+            rotate = 0
         if rotate == 0:
             for sd in video.get('side_data_list', []):
                 try:
@@ -65,7 +77,8 @@ def get_video_info(path):
                     if rot != 0:
                         rotate = (-rot) % 360  # converte -90 → 270
                         break
-                except: pass
+                except Exception:
+                    pass
     return w, h, dur, rotate
 
 
@@ -92,10 +105,11 @@ def prerotate_video(in_path, out_path, rotation):
 
 # Dimensões alvo por formato
 _CLIP_FORMATS = {
-    'vertical':   (1080, 1920),
-    'square':     (1080, 1080),
+    'vertical': (1080, 1920),
+    'square': (1080, 1080),
     'horizontal': (1920, 1080),
 }
+
 
 def normalize_clip_for_timeline(input_path, output_path, output_format):
     """
@@ -156,7 +170,6 @@ def normalize_clip_for_timeline(input_path, output_path, output_format):
         raise RuntimeError(f"ffmpeg error:\n{result.stderr[-2000:]}")
 
 
-
 def esc_ff(text):
     """Escape text for FFmpeg drawtext filter."""
     return text.replace('\\', '\\\\').replace("'", "\\'").replace(':', '\\:').replace('%', '\\%')
@@ -170,29 +183,29 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
     template='extra' → caixa preta/texto branco, pílula vermelha (Exo2 ExtraBold)
     template='globo' → caixa branca/texto preto (Corsario VF título, Open Sans antetítulo)
     """
-    img  = Image.new('RGBA', (out_w, out_h), (0, 0, 0, 0))
+    img = Image.new('RGBA', (out_w, out_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     is_globo = (template == 'globo')
 
-    margin   = int(out_w * 0.028)
-    main_sz  = int(out_w * font_pct)
+    margin = int(out_w * 0.028)
+    main_sz = int(out_w * font_pct)
     super_sz = int(main_sz * (0.5 if is_globo else 0.593))
-    pill_px  = int(out_w * 0.018)
-    box_px   = int(out_w * 0.018)
-    line_h   = int(main_sz * (1.15 if is_globo else 1.19))
-    pill_h   = int(super_sz * (1.9 if is_globo else 1.55))
+    pill_px = int(out_w * 0.018)
+    box_px = int(out_w * 0.018)
+    line_h = int(main_sz * (1.15 if is_globo else 1.19))
+    pill_h = int(super_sz * (1.9 if is_globo else 1.55))
 
-    main_font_path  = GLOBO_MAIN_FONT  if is_globo else FONT_PATH
+    main_font_path = GLOBO_MAIN_FONT if is_globo else FONT_PATH
     super_font_path = GLOBO_SUPER_FONT if is_globo else FONT_PATH
 
     try:
-        f_main  = ImageFont.truetype(main_font_path, main_sz)
+        f_main = ImageFont.truetype(main_font_path, main_sz)
         f_super = ImageFont.truetype(super_font_path, super_sz)
     except Exception as e:
         import sys
         print(f'[FONT ERROR] template={template} main={main_font_path} super={super_font_path} err={e}', file=sys.stderr)
-        f_main  = ImageFont.load_default()
+        f_main = ImageFont.load_default()
         f_super = ImageFont.load_default()
 
     # Word-wrap maintitle — respeita quebras manuais
@@ -207,19 +220,24 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
                 if (bb[2] - bb[0]) <= max_w:
                     cur = test
                 else:
-                    if cur: lines.append(cur)
+                    if cur:
+                        lines.append(cur)
                     cur = w
-            if cur: lines.append(cur)
+            if cur:
+                lines.append(cur)
 
     total_text_h = len(lines) * line_h
-    total_h = (pill_h + 8 + total_text_h) if (supertitle and lines) else               (pill_h if supertitle else total_text_h)
+    total_h = (pill_h + 8 + total_text_h) if (supertitle and lines) else (pill_h if supertitle else total_text_h)
 
-    if title_pos == 'bottom':   cy = int(out_h * 0.695) - total_h
-    elif title_pos == 'top':    cy = int(out_h * 0.08)
-    else:                        cy = (out_h - total_h) // 2
+    if title_pos == 'bottom':
+        cy = int(out_h * 0.695) - total_h
+    elif title_pos == 'top':
+        cy = int(out_h * 0.08)
+    else:
+        cy = (out_h - total_h) // 2
 
     # Apply manual offsets
-    cy     += int(out_h * offset_y)
+    cy += int(out_h * offset_y)
     margin += int(out_w * offset_x)
 
     super_text = supertitle.upper() if (supertitle and is_globo) else (supertitle.upper() if supertitle else '')
@@ -246,10 +264,10 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
         tw = bb[2] - bb[0]
         bw = tw + box_px * 2
         if is_globo:
-            box_fill  = (255, 255, 255, 255)
+            box_fill = (255, 255, 255, 255)
             text_fill = (0, 0, 0, 255)
         else:
-            box_fill  = (0, 0, 0, int(255 * 0.9))
+            box_fill = (0, 0, 0, int(255 * 0.9))
             text_fill = (255, 255, 255, 255)
         draw.rectangle([margin, ly, margin + bw, ly + line_h], fill=box_fill)
         draw.text((margin + box_px - bb[0], ly + int((line_h - (bb[3] - bb[1])) / 2) - bb[1]),
@@ -259,49 +277,48 @@ def make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos,
 
 # ── Render endpoint ────────────────────────────────────────────────────────────
 
+
 @app.route('/render', methods=['POST'])
 def render():
     tmp_dir = tempfile.mkdtemp(prefix='globo_render_')
     try:
         # ── Parse form data ──────────────────────────────────────────
-        video_file  = request.files.get('video')
-        logo_file   = request.files.get('logo')
-        supertitle  = request.form.get('supertitle', '').strip()
-        maintitle   = request.form.get('maintitle', '').strip()
-        title_dur   = float(request.form.get('title_dur', 6))
-        title_pos   = request.form.get('title_pos', 'bottom')   # bottom / top / middle
-        font_pct    = float(request.form.get('font_pct', 5.9)) / 100
+        video_file = request.files.get('video')
+        logo_file = request.files.get('logo')
+        supertitle = request.form.get('supertitle', '').strip()
+        maintitle = request.form.get('maintitle', '').strip()
+        title_dur = float(request.form.get('title_dur', 6))
+        title_pos = request.form.get('title_pos', 'bottom')   # bottom / top / middle
+        font_pct = float(request.form.get('font_pct', 5.9)) / 100
         title_offset_x = float(request.form.get('title_offset_x', 0)) / 100
         title_offset_y = float(request.form.get('title_offset_y', 0)) / 100
-        template    = request.form.get('template', 'extra')      # extra / globo
-        out_format  = request.form.get('out_format', '9:16')    # 9:16 / 16:9
-        quality     = request.form.get('quality', '720p')
-        wm_mode     = request.form.get('wm_mode', 'image')      # image / text / none
-        wm_pos      = request.form.get('wm_pos', 'topleft')
+        template = request.form.get('template', 'extra')      # extra / globo
+        out_format = request.form.get('out_format', '9:16')    # 9:16 / 16:9
+        quality = request.form.get('quality', '720p')
+        wm_mode = request.form.get('wm_mode', 'image')      # image / text / none
+        wm_pos = request.form.get('wm_pos', 'topleft')
         wm_size_pct = float(request.form.get('wm_size', 25)) / 100
         wm_margin_x = float(request.form.get('wm_margin_x', 11)) / 100
         wm_margin_y = float(request.form.get('wm_margin_y', 11)) / 100
-        wm_opacity  = float(request.form.get('wm_opacity', 100)) / 100
+        wm_opacity = float(request.form.get('wm_opacity', 100)) / 100
         # Crop params (from interactive crop UI)
-        crop_x      = int(request.form.get('crop_x', 0))
-        crop_y      = int(request.form.get('crop_y', 0))
-        crop_w      = int(request.form.get('crop_w', 0))
-        crop_h      = int(request.form.get('crop_h', 0))
+        crop_x = int(request.form.get('crop_x', 0))
+        crop_y = int(request.form.get('crop_y', 0))
+        crop_w = int(request.form.get('crop_w', 0))
+        crop_h = int(request.form.get('crop_h', 0))
 
         if not video_file:
             return jsonify({'error': 'Nenhum vídeo enviado'}), 400
 
         # ── Save uploaded files ──────────────────────────────────────
-        in_path  = Path(tmp_dir) / 'input.mp4'
+        in_path = Path(tmp_dir) / 'input.mp4'
         out_path = Path(tmp_dir) / 'output.mp4'
         video_file.save(str(in_path))
 
-        use_custom_logo = False
         logo_path = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
         if logo_file and logo_file.filename:
             logo_path = str(Path(tmp_dir) / 'logo.png')
             logo_file.save(logo_path)
-            use_custom_logo = True
 
         # ── Video dimensions ─────────────────────────────────────────
         vw, vh, dur, v_rotate = get_video_info(str(in_path))
@@ -362,7 +379,6 @@ def render():
             crop_str = ''
 
         # ── Title overlay via Pillow PNG (works on all FFmpeg builds) ──
-        title_filters = []
         title_overlay_path = None
         if supertitle or maintitle:
             overlay_img = make_title_overlay(out_w, out_h, supertitle, maintitle, font_pct, title_pos, title_offset_x, title_offset_y, template)
@@ -415,7 +431,8 @@ def render():
         # Title overlay (enable for first title_dur seconds)
         if title_overlay_path:
             inputs += ['-i', title_overlay_path]
-            title_input = input_idx; input_idx += 1
+            title_input = input_idx
+            input_idx += 1
             next_label = 'titled'
             fc_parts.append(f'[{cur_label}][{title_input}:v]overlay=0:0:enable=lt(t\\,{title_dur})[{next_label}]')
             cur_label = next_label
@@ -429,16 +446,21 @@ def render():
         # Watermark overlay
         if has_wm_image:
             wm_short = min(eff_w, eff_h)
-            wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(eff_w * wm_margin_x)
-            wm_my    = int(eff_h * wm_margin_y)
-            if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
-            elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
-            elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
-            else:                         ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
+            wm_w = int(wm_short * wm_size_pct)
+            wm_mx = int(eff_w * wm_margin_x)
+            wm_my = int(eff_h * wm_margin_y)
+            if wm_pos == 'topleft':
+                ox, oy = str(wm_mx), str(wm_my)
+            elif wm_pos == 'topright':
+                ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
+            elif wm_pos == 'bottomleft':
+                ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
+            else:
+                ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
 
             inputs += ['-i', logo_path]
-            wm_input = input_idx; input_idx += 1
+            wm_input = input_idx
+            input_idx += 1
             fc_parts.append(
                 f'[{wm_input}:v]scale={wm_w}:-1,format=rgba,colorchannelmixer=aa={wm_opacity}[wm]'
             )
@@ -494,7 +516,7 @@ def render():
 @app.route('/healthz')
 def healthz():
     import os
-    files = ['exo2-extrabold.ttf','extra_logo.png','oglobo_logo.png','opensans-regular.ttf','corsario-vf.otf']
+    files = ['exo2-extrabold.ttf', 'extra_logo.png', 'oglobo_logo.png', 'opensans-regular.ttf', 'corsario-vf.otf']
     result = {}
     for f in files:
         p = BASE_DIR / f
@@ -738,13 +760,13 @@ def _run_finalize(job_id, timeline_id, params):
     5. Atualiza render_jobs → done | error
     Clipes (clip_*.mp4) são preservados para múltiplos finalizes.
     """
-    timeline_dir  = Path(f'/tmp/timeline_{timeline_id}')
+    timeline_dir = Path(f'/tmp/timeline_{timeline_id}')
     timeline_dir.mkdir(parents=True, exist_ok=True)
 
-    concat_list   = timeline_dir / f'concat_{job_id[:8]}.txt'
-    tmp_concat    = timeline_dir / f'tmp_concat_{job_id[:8]}.mp4'
-    overlay_png   = timeline_dir / f'title_overlay_{job_id[:8]}.png'
-    final_path    = timeline_dir / f'final_{job_id[:8]}.mp4'
+    concat_list = timeline_dir / f'concat_{job_id[:8]}.txt'
+    tmp_concat = timeline_dir / f'tmp_concat_{job_id[:8]}.mp4'
+    overlay_png = timeline_dir / f'title_overlay_{job_id[:8]}.png'
+    final_path = timeline_dir / f'final_{job_id[:8]}.mp4'
 
     _success = False
 
@@ -752,7 +774,7 @@ def _run_finalize(job_id, timeline_id, params):
         conn = cur = None
         try:
             conn = get_db_connection()
-            cur  = conn.cursor()
+            cur = conn.cursor()
             cur.execute(
                 """
                 UPDATE render_jobs
@@ -765,23 +787,27 @@ def _run_finalize(job_id, timeline_id, params):
         except Exception:
             pass
         finally:
-            if cur:  cur.close()
-            if conn: conn.close()
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
     try:
         # ── Etapa 1: busca clipes ────────────────────────────────────────
         conn = cur = None
         try:
             conn = get_db_connection()
-            cur  = conn.cursor()
+            cur = conn.cursor()
             cur.execute(
                 "SELECT local_path FROM timeline_clips WHERE timeline_id = %s ORDER BY position",
                 (timeline_id,)
             )
             rows = cur.fetchall()
         finally:
-            if cur:  cur.close()
-            if conn: conn.close()
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
         if not rows:
             _update_job('error', error='Nenhum clipe encontrado para essa timeline')
@@ -823,20 +849,20 @@ def _run_finalize(job_id, timeline_id, params):
             return
 
         # ── Etapa 4: overlay ─────────────────────────────────────────────
-        template      = params['template']
-        maintitle     = params['maintitle']
-        supertitle    = params.get('supertitle', '')
-        font_pct      = params.get('font_pct', 0.059)
-        title_pos     = params.get('title_pos', 'bottom')
-        offset_x      = params.get('title_offset_x', 0.0)
-        offset_y      = params.get('title_offset_y', 0.0)
-        title_dur     = params.get('title_dur', 6)
-        wm_mode       = params.get('wm_mode', 'image')
-        wm_pos        = params.get('wm_pos', 'topleft')
-        wm_size_pct   = params.get('wm_size_pct', 0.25)
-        wm_margin_x   = params.get('wm_margin_x', 0.11)
-        wm_margin_y   = params.get('wm_margin_y', 0.11)
-        wm_opacity    = params.get('wm_opacity', 1.0)
+        template = params['template']
+        maintitle = params['maintitle']
+        supertitle = params.get('supertitle', '')
+        font_pct = params.get('font_pct', 0.059)
+        title_pos = params.get('title_pos', 'bottom')
+        offset_x = params.get('title_offset_x', 0.0)
+        offset_y = params.get('title_offset_y', 0.0)
+        title_dur = params.get('title_dur', 6)
+        wm_mode = params.get('wm_mode', 'image')
+        wm_pos = params.get('wm_pos', 'topleft')
+        wm_size_pct = params.get('wm_size_pct', 0.25)
+        wm_margin_x = params.get('wm_margin_x', 0.11)
+        wm_margin_y = params.get('wm_margin_y', 0.11)
+        wm_opacity = params.get('wm_opacity', 1.0)
 
         logo_path = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
 
@@ -847,7 +873,7 @@ def _run_finalize(job_id, timeline_id, params):
         overlay_img.save(str(overlay_png))
 
         # Monta filter_complex (sem rotação/crop — clipes já normalizados)
-        inputs   = ['-i', str(tmp_concat), '-i', str(overlay_png)]
+        inputs = ['-i', str(tmp_concat), '-i', str(overlay_png)]
         fc_parts = []
         cur_label = '0:v'
         input_idx = 2
@@ -862,13 +888,17 @@ def _run_finalize(job_id, timeline_id, params):
         has_wm = (wm_mode == 'image') and Path(logo_path).exists()
         if has_wm:
             wm_short = min(out_w, out_h)
-            wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(out_w * wm_margin_x)
-            wm_my    = int(out_h * wm_margin_y)
-            if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
-            elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
-            elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
-            else:                         ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
+            wm_w = int(wm_short * wm_size_pct)
+            wm_mx = int(out_w * wm_margin_x)
+            wm_my = int(out_h * wm_margin_y)
+            if wm_pos == 'topleft':
+                ox, oy = str(wm_mx), str(wm_my)
+            elif wm_pos == 'topright':
+                ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
+            elif wm_pos == 'bottomleft':
+                ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
+            else:
+                ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
 
             inputs += ['-i', logo_path]
             fc_parts.append(
@@ -916,7 +946,7 @@ def _run_finalize(job_id, timeline_id, params):
 def timeline_finalize(timeline_id):
     data = request.get_json(silent=True) or {}
 
-    template  = data.get('template', '').strip()
+    template = data.get('template', '').strip()
     maintitle = data.get('maintitle', '').strip()
     if template not in ('extra', 'globo'):
         return jsonify({'error': 'template deve ser "extra" ou "globo"'}), 400
@@ -924,27 +954,27 @@ def timeline_finalize(timeline_id):
         return jsonify({'error': 'maintitle é obrigatório'}), 400
 
     params = {
-        'template':       template,
-        'maintitle':      maintitle,
-        'supertitle':     data.get('supertitle', ''),
-        'font_pct':       float(data.get('font_pct', 5.9)) / 100,
-        'title_pos':      data.get('title_pos', 'bottom'),
+        'template': template,
+        'maintitle': maintitle,
+        'supertitle': data.get('supertitle', ''),
+        'font_pct': float(data.get('font_pct', 5.9)) / 100,
+        'title_pos': data.get('title_pos', 'bottom'),
         'title_offset_x': float(data.get('title_offset_x', 0)) / 100,
         'title_offset_y': float(data.get('title_offset_y', 0)) / 100,
-        'title_dur':      int(data.get('title_dur', 6)),
-        'wm_mode':        data.get('wm_mode', 'image'),
-        'wm_pos':         data.get('wm_pos', 'topleft'),
-        'wm_size_pct':    float(data.get('wm_size', 25)) / 100,
-        'wm_margin_x':    float(data.get('wm_margin_x', 11)) / 100,
-        'wm_margin_y':    float(data.get('wm_margin_y', 11)) / 100,
-        'wm_opacity':     float(data.get('wm_opacity', 100)) / 100,
+        'title_dur': int(data.get('title_dur', 6)),
+        'wm_mode': data.get('wm_mode', 'image'),
+        'wm_pos': data.get('wm_pos', 'topleft'),
+        'wm_size_pct': float(data.get('wm_size', 25)) / 100,
+        'wm_margin_x': float(data.get('wm_margin_x', 11)) / 100,
+        'wm_margin_y': float(data.get('wm_margin_y', 11)) / 100,
+        'wm_opacity': float(data.get('wm_opacity', 100)) / 100,
     }
 
     job_id = str(uuid.uuid4())
     conn = cur = None
     try:
         conn = get_db_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             "INSERT INTO render_jobs (id, timeline_id) VALUES (%s, %s)",
             (job_id, timeline_id)
@@ -953,8 +983,10 @@ def timeline_finalize(timeline_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur:  cur.close()
-        if conn: conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
     threading.Thread(
         target=_run_finalize, args=(job_id, timeline_id, params), daemon=True
@@ -968,7 +1000,7 @@ def timeline_finalize_status(timeline_id, job_id):
     conn = cur = None
     try:
         conn = get_db_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT status, output_path, error, updated_at
@@ -982,17 +1014,19 @@ def timeline_finalize_status(timeline_id, job_id):
             return jsonify({'error': 'job not found'}), 404
         status, output_path, error, updated_at = row
         return jsonify({
-            'job_id':      job_id,
-            'status':      status,
+            'job_id': job_id,
+            'status': status,
             'output_path': output_path,
-            'error':       error,
-            'updated_at':  updated_at.isoformat() if updated_at else None,
+            'error': error,
+            'updated_at': updated_at.isoformat() if updated_at else None,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur:  cur.close()
-        if conn: conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route('/api/timeline/<timeline_id>/finalize/<job_id>/download')
@@ -1001,7 +1035,7 @@ def timeline_finalize_download(timeline_id, job_id):
     conn = cur = None
     try:
         conn = get_db_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             "SELECT status, output_path FROM render_jobs WHERE id = %s AND timeline_id = %s",
             (job_id, timeline_id)
@@ -1019,17 +1053,20 @@ def timeline_finalize_download(timeline_id, job_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur:  cur.close()
-        if conn: conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # ── Timeline preview ──────────────────────────────────────────────────────────
 
 _PREVIEW_FMT_DIMS = {
-    'vertical':   (1080, 1920),
-    'square':     (1080, 1080),
+    'vertical': (1080, 1920),
+    'square': (1080, 1080),
     'horizontal': (1920, 1080),
 }
+
 
 @app.route('/api/timeline/<timeline_id>/preview', methods=['GET'])
 def timeline_preview(timeline_id):
@@ -1039,26 +1076,26 @@ def timeline_preview(timeline_id):
     Retorna JPEG.
     """
     # ── Lê parâmetros ──────────────────────────────────────────────────────
-    template      = request.args.get('template', 'extra')
-    maintitle     = request.args.get('maintitle', '')
-    supertitle    = request.args.get('supertitle', '')
-    font_pct      = float(request.args.get('font_pct', 5.9)) / 100
-    title_pos     = request.args.get('title_pos', 'bottom')
-    offset_x      = float(request.args.get('title_offset_x', 0)) / 100
-    offset_y      = float(request.args.get('title_offset_y', 0)) / 100
-    title_dur     = int(request.args.get('title_dur', 6))
-    wm_mode       = request.args.get('wm_mode', 'image')
-    wm_pos        = request.args.get('wm_pos', 'topleft')
-    wm_size_pct   = float(request.args.get('wm_size', 25)) / 100
-    wm_margin_x   = float(request.args.get('wm_margin_x', 11)) / 100
-    wm_margin_y   = float(request.args.get('wm_margin_y', 11)) / 100
-    wm_opacity    = float(request.args.get('wm_opacity', 100)) / 100
+    template = request.args.get('template', 'extra')
+    maintitle = request.args.get('maintitle', '')
+    supertitle = request.args.get('supertitle', '')
+    font_pct = float(request.args.get('font_pct', 5.9)) / 100
+    title_pos = request.args.get('title_pos', 'bottom')
+    offset_x = float(request.args.get('title_offset_x', 0)) / 100
+    offset_y = float(request.args.get('title_offset_y', 0)) / 100
+    title_dur = int(request.args.get('title_dur', 6))
+    wm_mode = request.args.get('wm_mode', 'image')
+    wm_pos = request.args.get('wm_pos', 'topleft')
+    wm_size_pct = float(request.args.get('wm_size', 25)) / 100
+    wm_margin_x = float(request.args.get('wm_margin_x', 11)) / 100
+    wm_margin_y = float(request.args.get('wm_margin_y', 11)) / 100
+    wm_opacity = float(request.args.get('wm_opacity', 100)) / 100
 
     # ── Busca clipe com menor position ────────────────────────────────────
     conn = cur = None
     try:
         conn = get_db_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT local_path, output_format
@@ -1073,8 +1110,10 @@ def timeline_preview(timeline_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur:  cur.close()
-        if conn: conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
     if not row:
         return jsonify({'error': 'no clips in timeline'}), 404
@@ -1084,11 +1123,11 @@ def timeline_preview(timeline_id):
         return jsonify({'error': 'clip file not found on disk'}), 404
 
     out_w, out_h = _PREVIEW_FMT_DIMS.get(output_format, (1080, 1920))
-    logo_path    = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
+    logo_path = GLOBO_LOGO_PATH if template == 'globo' else LOGO_PATH
 
     tmp_dir = tempfile.mkdtemp(prefix='preview_')
     try:
-        frame_path   = Path(tmp_dir) / 'frame.jpg'
+        frame_path = Path(tmp_dir) / 'frame.jpg'
         overlay_path = Path(tmp_dir) / 'overlay.png'
         preview_path = Path(tmp_dir) / 'preview.jpg'
 
@@ -1113,8 +1152,8 @@ def timeline_preview(timeline_id):
         overlay_img.save(str(overlay_path))
 
         # ── Monta filter_complex (igual ao finalize) ──────────────────────
-        inputs    = ['-i', str(frame_path), '-i', str(overlay_path)]
-        fc_parts  = []
+        inputs = ['-i', str(frame_path), '-i', str(overlay_path)]
+        fc_parts = []
         cur_label = '0:v'
         input_idx = 2
 
@@ -1126,13 +1165,17 @@ def timeline_preview(timeline_id):
         has_wm = (wm_mode == 'image') and Path(logo_path).exists()
         if has_wm:
             wm_short = min(out_w, out_h)
-            wm_w     = int(wm_short * wm_size_pct)
-            wm_mx    = int(out_w * wm_margin_x)
-            wm_my    = int(out_h * wm_margin_y)
-            if   wm_pos == 'topleft':     ox, oy = str(wm_mx), str(wm_my)
-            elif wm_pos == 'topright':    ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
-            elif wm_pos == 'bottomleft':  ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
-            else:                         ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
+            wm_w = int(wm_short * wm_size_pct)
+            wm_mx = int(out_w * wm_margin_x)
+            wm_my = int(out_h * wm_margin_y)
+            if wm_pos == 'topleft':
+                ox, oy = str(wm_mx), str(wm_my)
+            elif wm_pos == 'topright':
+                ox, oy = f'main_w-overlay_w-{wm_mx}', str(wm_my)
+            elif wm_pos == 'bottomleft':
+                ox, oy = str(wm_mx), f'main_h-overlay_h-{wm_my}'
+            else:
+                ox, oy = f'main_w-overlay_w-{wm_mx}', f'main_h-overlay_h-{wm_my}'
 
             inputs += ['-i', logo_path]
             fc_parts.append(
@@ -1169,17 +1212,19 @@ def timeline_preview(timeline_id):
 # In-memory job store for extension to pick up
 _ef_jobs = {}
 
+
 @app.route('/ef_job', methods=['POST'])
 def ef_job_create():
     """App creates a job; extension fetches it to know what to upload."""
     data = request.get_json()
     job_id = uuid.uuid4().hex[:12]
     _ef_jobs[job_id] = {
-        'filename':    data.get('filename'),
-        'title':       data.get('title', ''),
+        'filename': data.get('filename'),
+        'title': data.get('title', ''),
         'description': data.get('description', ''),
     }
     return jsonify({'job_id': job_id})
+
 
 @app.route('/ef_job/<job_id>')
 def ef_job_get(job_id):
@@ -1210,8 +1255,7 @@ def publish_ef():
     """Upload rendered video to EF publisher."""
     import requests as req_lib
 
-    filename  = request.form.get('filename')
-    title     = request.form.get('title', '')
+    filename = request.form.get('filename')
     ef_cookie = request.form.get('ef_cookie', '')  # user pastes their session cookie
 
     if not filename:
@@ -1252,15 +1296,15 @@ def publish_ef():
                 'https://ef-gcp.globoi.com/upload_video',
                 data=fh,
                 headers={
-                    'X-CSRF-Token':        csrf,
-                    'Content-Type':        'application/octet-stream',
-                    'Accept':              'application/json, text/javascript, */*; q=0.01',
-                    'X-File-Name':         fname,
-                    'X-File-Type':         'video/mp4',
-                    'X-File-Size':         str(file_size),
+                    'X-CSRF-Token': csrf,
+                    'Content-Type': 'application/octet-stream',
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'X-File-Name': fname,
+                    'X-File-Type': 'video/mp4',
+                    'X-File-Size': str(file_size),
                     'Content-Disposition': f'attachment; filename="{fname}"',
-                    'X-Requested-With':    'XMLHttpRequest',
-                    'Referer':             'https://ef-gcp.globoi.com/videos/new',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Referer': 'https://ef-gcp.globoi.com/videos/new',
                 },
                 timeout=300
             )
@@ -1277,7 +1321,7 @@ def publish_ef():
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE,
-        has_logo=Path(LOGO_PATH).exists())
+                                  has_logo=Path(LOGO_PATH).exists())
 
 
 # ── Cleanup de timelines abandonadas ─────────────────────────────────────────
@@ -2521,7 +2565,6 @@ document.querySelectorAll('.tmpl-btn').forEach(b=>{
 
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
     print(f"Editor de Vídeo rodando na porta {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
