@@ -10,7 +10,6 @@ import uuid
 import subprocess
 import tempfile
 import shutil
-import re
 import io
 import threading
 import time
@@ -1250,110 +1249,6 @@ def video_info():
         os.unlink(tmp.name)
 
 
-@app.route('/publish_ef', methods=['POST'])
-def publish_ef():
-    """Upload rendered video to EF publisher.
-
-    Accepts two mutually exclusive modes:
-      - Single video: filename (basename only) — resolved against OUTPUT_DIR.
-      - Timeline:     job_id + timeline_id    — path read from render_jobs DB row.
-    """
-    import requests as req_lib
-
-    ef_cookie = request.form.get('ef_cookie', '')
-    job_id = request.form.get('job_id', '').strip()
-    timeline_id = request.form.get('timeline_id', '').strip()
-    filename = request.form.get('filename', '').strip()
-
-    # ── Resolve file path based on mode ──────────────────────────────────────
-    if job_id and timeline_id:
-        # Timeline mode: look up output_path in DB — never trust a client-supplied path
-        conn = cur = None
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT status, output_path FROM render_jobs WHERE id = %s AND timeline_id = %s",
-                (job_id, timeline_id)
-            )
-            row = cur.fetchone()
-        except Exception as e:
-            return jsonify({'error': f'DB error: {e}'}), 500
-        finally:
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-        if not row:
-            return jsonify({'error': 'job not found'}), 404
-        status, output_path = row
-        if status != 'done' or not output_path:
-            return jsonify({'error': 'render not complete'}), 409
-        file_path = Path(output_path)
-    elif filename:
-        # Single-video mode: filename must be a plain basename — no path traversal
-        if '/' in filename or '..' in filename:
-            return jsonify({'error': 'invalid filename'}), 400
-        file_path = OUTPUT_DIR / filename
-    else:
-        return jsonify({'error': 'filename or job_id+timeline_id required'}), 400
-
-    if not file_path.exists():
-        return jsonify({'error': 'file not found on disk'}), 404
-
-    # Get CSRF token from EF
-    session = req_lib.Session()
-    if ef_cookie:
-        # Accept either full cookie string or just the value
-        ef_cookie = ef_cookie.strip()
-        if '=' not in ef_cookie:
-            # Raw value — assume it's _ef_session
-            session.cookies.set('_ef_session', ef_cookie, domain='ef-gcp.globoi.com')
-        else:
-            for part in ef_cookie.split(';'):
-                part = part.strip()
-                if '=' in part:
-                    k, v = part.split('=', 1)
-                    session.cookies.set(k.strip(), v.strip(), domain='ef-gcp.globoi.com')
-
-    try:
-        page = session.get('https://ef-gcp.globoi.com/videos/new', timeout=15)
-        # Extract authenticity_token
-        m = re.search(r'name="authenticity_token"\s+value="([^"]+)"', page.text)
-        if not m:
-            return jsonify({'error': 'Não foi possível obter o token CSRF. Verifique o cookie de sessão.'}), 400
-        csrf = m.group(1)
-
-        file_size = file_path.stat().st_size
-        fname = file_path.name
-
-        with open(str(file_path), 'rb') as fh:
-            resp = session.post(
-                'https://ef-gcp.globoi.com/upload_video',
-                data=fh,
-                headers={
-                    'X-CSRF-Token': csrf,
-                    'Content-Type': 'application/octet-stream',
-                    'Accept': 'application/json, text/javascript, */*; q=0.01',
-                    'X-File-Name': fname,
-                    'X-File-Type': 'video/mp4',
-                    'X-File-Size': str(file_size),
-                    'Content-Disposition': f'attachment; filename="{fname}"',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Referer': 'https://ef-gcp.globoi.com/videos/new',
-                },
-                timeout=300
-            )
-
-        if resp.status_code in (200, 201):
-            return jsonify({'ok': True, 'response': resp.json() if resp.text else {}})
-        else:
-            return jsonify({'error': f'EF retornou {resp.status_code}: {resp.text[:300]}'}), 400
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE,
@@ -1535,19 +1430,6 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .omsg.err{background:rgba(232,0,45,.08);color:#f87171;border:1px solid rgba(232,0,45,.15);display:block}
 .omsg a{color:inherit;font-weight:700}
 
-.ef-panel{display:none;margin-top:10px;padding:11px 12px;border-radius:var(--radius);background:rgba(29,78,216,.07);border:1px solid rgba(29,78,216,.2)}
-.ef-panel.on{display:block}
-.ef-panel .ef-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#60a5fa;margin-bottom:8px}
-.ef-panel input{width:100%;background:#0d1a2d;border:1px solid rgba(29,78,216,.3);border-radius:5px;color:var(--text);padding:7px 9px;font-size:11px;font-family:var(--font);outline:none;margin-bottom:8px}
-.ef-panel input:focus{border-color:#3b82f6}
-.ef-panel input::placeholder{color:#334e7a}
-.ef-panel .btn-ef{width:100%;background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:8px;font-size:12px;font-weight:700;font-family:var(--font);cursor:pointer;transition:opacity .15s}
-.ef-panel .btn-ef:hover:not(:disabled){opacity:.85}
-.ef-panel .btn-ef:disabled{opacity:.4;cursor:not-allowed}
-.ef-panel .ef-msg{margin-top:7px;font-size:11px;line-height:1.5;display:none}
-.ef-panel .ef-msg.ok{color:#4ade80;display:block}
-.ef-panel .ef-msg.err{color:#f87171;display:block}
-
 .logo-box{background:var(--panel2);border:1px solid var(--border2);border-radius:var(--radius);padding:10px;text-align:center;cursor:pointer;position:relative;transition:border-color .15s;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .logo-box:hover{border-color:var(--border)}
 .logo-box input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -1727,12 +1609,6 @@ canvas{display:block}
       <div class="prog-trk"><div class="prog-fill" id="progF"></div></div>
     </div>
     <div class="omsg" id="omsg"></div>
-    <div class="ef-panel" id="efPanel">
-      <div class="ef-lbl">🚀 Publicar no EF</div>
-      <input type="text" id="efCookie" placeholder="Cole aqui o valor do cookie _ef_session">
-      <button class="btn-ef" id="btnEF" onclick="publishEF()">Publicar no EF</button>
-      <div class="ef-msg" id="efMsg"></div>
-    </div>
   </div>
 
 </div>
@@ -1986,7 +1862,7 @@ async function finalizeTimeline() {
   if (!tlTimelineId || tlClips.length === 0) return;
   const btn = document.getElementById('btnR');
   btn.disabled = true;
-  setOut('', ''); hideEfPanel();
+  setOut('', '');
   setProg(0, 'Iniciando finalização…');
 
   try {
@@ -2025,7 +1901,6 @@ async function finalizeTimeline() {
           clearInterval(pollId);
           setProg(100, '✓ Concluído!');
           setOut('ok', `✓ Timeline finalizada &nbsp;<a href="${dlUrl}" download style="background:var(--red);color:#fff;padding:5px 12px;border-radius:5px;text-decoration:none;font-weight:700">⬇ Baixar</a>`);
-          showEfPanel({mode: 'timeline', jobId, timelineId: tlTimelineId});
           btn.disabled = false;
         } else if (sd.status === 'error') {
           clearInterval(pollId);
@@ -2485,7 +2360,7 @@ document.getElementById('btnR').addEventListener('click', () => {
 async function renderVideo(){
   if(!vFile)return;
   const btn=document.getElementById('btnR');
-  btn.disabled=true; setOut('',''); hideEfPanel();
+  btn.disabled=true; setOut('','');
   try{
     setProg(10,'Enviando para o servidor…');
     const fd=new FormData();
@@ -2522,7 +2397,6 @@ async function renderVideo(){
     setProg(100,'✓ Concluído!');
     const name=data.filename;
     setOut('ok',`✓ <strong>${name}</strong> &nbsp; <a href="/download/${name}" download style="background:var(--red);color:#fff;padding:5px 12px;border-radius:5px;text-decoration:none;font-weight:700">⬇ Baixar</a>`);
-    showEfPanel({mode: 'single', filename: name});
   }catch(e){
     setOut('err','❌ Erro: '+e.message);console.error(e);
   }finally{btn.disabled=false;}
@@ -2535,54 +2409,6 @@ function setProg(pct,lbl){
   document.getElementById('progP').textContent=pct+'%';
 }
 function setOut(t,h){const e=document.getElementById('omsg');e.className='omsg'+(t?' '+t:'');e.innerHTML=h;}
-
-// ── EF publish panel ──────────────────────────────────────────────────────────
-let _efParams = null;
-function showEfPanel(params) {
-  _efParams = params;
-  const p = document.getElementById('efPanel');
-  p.classList.add('on');
-  const m = document.getElementById('efMsg');
-  m.className = 'ef-msg'; m.textContent = '';
-  document.getElementById('btnEF').disabled = false;
-}
-function hideEfPanel() {
-  _efParams = null;
-  const p = document.getElementById('efPanel');
-  p.classList.remove('on');
-  const m = document.getElementById('efMsg');
-  m.className = 'ef-msg'; m.textContent = '';
-}
-async function publishEF() {
-  if (!_efParams) return;
-  const cookie = document.getElementById('efCookie').value.trim();
-  if (!cookie) { alert('Cole o cookie _ef_session antes de publicar.'); return; }
-  const btn = document.getElementById('btnEF');
-  const msg = document.getElementById('efMsg');
-  btn.disabled = true; btn.textContent = '⏳ Publicando…';
-  msg.className = 'ef-msg'; msg.textContent = '';
-  const fd = new FormData();
-  fd.append('ef_cookie', cookie);
-  if (_efParams.mode === 'timeline') {
-    fd.append('job_id', _efParams.jobId);
-    fd.append('timeline_id', _efParams.timelineId);
-  } else {
-    fd.append('filename', _efParams.filename);
-  }
-  try {
-    const resp = await fetch('/publish_ef', { method: 'POST', body: fd });
-    const data = await resp.json();
-    if (data.ok) {
-      msg.className = 'ef-msg ok'; msg.textContent = '✓ Publicado com sucesso no EF!';
-    } else {
-      msg.className = 'ef-msg err'; msg.textContent = '❌ ' + (data.error || 'Erro desconhecido');
-    }
-  } catch(e) {
-    msg.className = 'ef-msg err'; msg.textContent = '❌ Erro de rede: ' + e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = 'Publicar no EF';
-  }
-}
 
 // ── Zoom buttons — created in JS, injected after canvas wrap ─────────────────
 function createZoomButtons() {

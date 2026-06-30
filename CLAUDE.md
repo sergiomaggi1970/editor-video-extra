@@ -151,7 +151,11 @@ On Railway the filesystem is ephemeral — files do not persist between deploys.
 
 ## EF Publisher Integration
 
-`/publish_ef` uploads a rendered video to O Globo's internal EF platform (`ef-gcp.globoi.com`), handling CSRF token extraction and session cookies. Only functional inside O Globo's network/credentials.
+**A publicação direta no EF a partir do Railway não é viável.** `ef-gcp.globoi.com` só é acessível de dentro da rede/VPN corporativa da Globo. O Railway roda em infraestrutura externa (Google Cloud) e nunca consegue alcançar esse host — a conexão dá timeout confirmado em teste real.
+
+Por isso o fluxo correto é manual: baixar o vídeo final pelo link "⬇ Baixar" gerado pelo editor e fazer upload diretamente na interface do EF (`ef-gcp.globoi.com/videos/new`), de dentro da rede da Globo.
+
+Os endpoints `/ef_job` e `/ef_job/<job_id>` permanecem no código como base para uma futura abordagem via extensão Chrome: a extensão, rodando no browser do usuário (dentro da rede), buscaria o job e faria o upload diretamente — sem depender do servidor Railway como intermediário.
 
 ## Deployment
 
