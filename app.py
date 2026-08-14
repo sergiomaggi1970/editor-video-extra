@@ -35,9 +35,11 @@ LOGO_PATH = str(BASE_DIR / 'extra_logo.png')
 GLOBO_LOGO_PATH = str(BASE_DIR / 'oglobo_logo.png')
 GLOBO_SUPER_FONT = str(BASE_DIR / 'opensans-regular.ttf')
 GLOBO_MAIN_FONT = str(BASE_DIR / 'corsario-vf.otf')
-# Use /tmp on Railway (ephemeral, but fine for video processing)
-UPLOAD_DIR = Path('/tmp/editor_uploads')
-OUTPUT_DIR = Path('/tmp/editor_outputs')
+# Usa a pasta temp do sistema (no Railway/Linux resolve para /tmp,
+# no Windows resolve para um caminho absoluto de verdade com letra
+# de unidade — /tmp fixo não é absoluto no Windows e quebra o FFmpeg)
+UPLOAD_DIR = Path(tempfile.gettempdir()) / 'editor_uploads'
+OUTPUT_DIR = Path(tempfile.gettempdir()) / 'editor_outputs'
 UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
@@ -599,7 +601,7 @@ def timeline_add_clip():
         return jsonify({'error': f'output_format must be one of {list(_CLIP_FORMATS)}'}), 400
 
     # Diretório de destino para essa timeline
-    timeline_dir = Path(f'/tmp/timeline_{timeline_id}')
+    timeline_dir = Path(tempfile.gettempdir()) / f'timeline_{timeline_id}'
     timeline_dir.mkdir(parents=True, exist_ok=True)
 
     # Salva upload temporariamente
@@ -759,7 +761,7 @@ def _run_finalize(job_id, timeline_id, params):
     5. Atualiza render_jobs → done | error
     Clipes (clip_*.mp4) são preservados para múltiplos finalizes.
     """
-    timeline_dir = Path(f'/tmp/timeline_{timeline_id}')
+    timeline_dir = Path(tempfile.gettempdir()) / f'timeline_{timeline_id}'
     timeline_dir.mkdir(parents=True, exist_ok=True)
 
     concat_list = timeline_dir / f'concat_{job_id[:8]}.txt'
@@ -1287,7 +1289,7 @@ def _cleanup_abandoned_timelines():
 
                 tl_cleaned = 0
                 for tid in tids:
-                    tl_dir = Path(f'/tmp/timeline_{tid}')
+                    tl_dir = Path(tempfile.gettempdir()) / f'timeline_{tid}'
                     if tl_dir.exists():
                         for clip in tl_dir.glob('clip_*.mp4'):
                             clip.unlink(missing_ok=True)
