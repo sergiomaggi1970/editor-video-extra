@@ -33,3 +33,5 @@ gcloud_credentials*
 # Uploads e outputs gerados em runtime (Railway usa /tmp, mas por segurança)
 editor_uploads/
 editor_outputs/
+Icon?
+*.gdoc
